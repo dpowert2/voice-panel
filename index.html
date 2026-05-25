@@ -550,47 +550,71 @@ function addEvent(ev){
 }
 
 /* ---- serial streaming-audio queue --------------------------- *
- * Each turn now has its own audio URL (/turn-audio/<id>) that the
- * backend serves with chunked transfer-encoding. The browser plays it
- * progressively via a plain <audio> element — first sound starts as
- * soon as the first chunk arrives (~500ms after we get turn_start).
- * Turns play strictly in order: we queue URLs and play them sequentially.
+ * Mobile browsers (iOS Safari, Chrome Android) restrict programmatic
+ * Audio creation — elements created without a user gesture get suspended
+ * and play through the "ringer" volume channel (not media volume).
+ *
+ * Fix: two persistent <audio> elements in the DOM, "unlocked" on the
+ * first user tap (mic / send / any button). Subsequent playback reuses
+ * them by swapping .src — the audio session stays alive, plays through
+ * the media channel, and the phone's volume buttons work.
  * --------------------------------------------------------------- */
 const _audioQueue = [];      // pending {url, persona_key, turn_id} entries
 let _audioPlaying = false;
 let _chainActive  = false;
-let _currentAudio = null;    // the <audio> element currently playing
-let _currentMainTurnId = null;   // id of the turn currently playing — used by reactions
+let _currentMainTurnId = null;
 
-/* Phase D: reaction audio elements playing concurrently with the main turn.
-   Tracked so _stopAllAudio (on interrupt / reset) can tear them down. */
+const _isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+const _mainAudioEl = document.createElement("audio");
+_mainAudioEl.preload = "auto";
+_mainAudioEl.playsInline = true;
+_mainAudioEl.setAttribute("playsinline", "");
+document.body.appendChild(_mainAudioEl);
+
+const _reactionAudioEl = document.createElement("audio");
+_reactionAudioEl.preload = "auto";
+_reactionAudioEl.playsInline = true;
+_reactionAudioEl.setAttribute("playsinline", "");
+_reactionAudioEl.volume = 0.65;
+document.body.appendChild(_reactionAudioEl);
+
+let _audioUnlocked = false;
+function _unlockAudio(){
+  if (_audioUnlocked) return;
+  _audioUnlocked = true;
+  const silent = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGFhwAAAAA==";
+  _mainAudioEl.src = silent;
+  _mainAudioEl.play().then(() => { _mainAudioEl.pause(); }).catch(() => {});
+  _reactionAudioEl.src = silent;
+  _reactionAudioEl.play().then(() => { _reactionAudioEl.pause(); }).catch(() => {});
+  console.log("[audio] unlocked via user gesture");
+}
+document.addEventListener("click", _unlockAudio, { once: false, capture: true });
+document.addEventListener("touchstart", _unlockAudio, { once: false, capture: true });
+
 const _reactionAudios = new Set();
 
 function _playNextAudio(){
   if (_audioQueue.length === 0){
     _audioPlaying = false;
-    _currentAudio = null;
     _currentMainTurnId = null;
     setSpeaking(null);
     return;
   }
   _audioPlaying = true;
-  // Mic STAYS LIVE during playback (Phase C) — we need it on so VAD can
-  // detect the user starting to speak over the panel. Echo handling is
-  // Phase B's job; for now lean on browser AEC + headphones recommendation.
   const { url, persona_key, turn_id } = _audioQueue.shift();
   _currentMainTurnId = turn_id || null;
   setSpeaking(persona_key);
-  const audio = new Audio(url);
-  audio.preload = "auto";
-  _currentAudio = audio;
+  _mainAudioEl.src = url;
   const next = () => {
-    if (_currentAudio === audio){ _currentAudio = null; _currentMainTurnId = null; }
+    _mainAudioEl.onended = null;
+    _mainAudioEl.onerror = null;
     _playNextAudio();
   };
-  audio.onended = next;
-  audio.onerror = (e) => { console.warn("audio error", e); next(); };
-  audio.play().catch((e) => { console.warn("audio play rejected", e); next(); });
+  _mainAudioEl.onended = next;
+  _mainAudioEl.onerror = (e) => { console.warn("audio error", e); next(); };
+  _mainAudioEl.play().catch((e) => { console.warn("audio play rejected", e); next(); });
 }
 
 function enqueueTurnAudio(turnStartEv){
@@ -608,42 +632,48 @@ function enqueueTurnAudio(turnStartEv){
    meaningful. Multi-tile glow lights up the reacting persona's tile alongside
    the main speaker's. */
 function playReaction(ev){
-  // Only play if its parent turn is the one currently playing (or imminent).
-  // If the main turn already ended (parent_id mismatch or no audio at all),
-  // the reaction is stale — drop it.
   if (!ev.audio_url) return;
   if (_currentMainTurnId && _currentMainTurnId !== ev.parent_id){
     console.log("[reaction] dropping stale reaction (parent finished)", ev);
     return;
   }
-  if (!_currentAudio && !_chainActive){
+  if (!_audioPlaying && !_chainActive){
     console.log("[reaction] no main turn active, dropping", ev);
     return;
   }
-  const audio = new Audio(ev.audio_url);
-  audio.preload = "auto";
-  audio.volume = 0.65;        // ducked under main turn audio
-  _reactionAudios.add(audio);
-  _setReacting(ev.persona_key, true);
-  const cleanup = () => {
-    _reactionAudios.delete(audio);
-    _setReacting(ev.persona_key, false);
-  };
-  audio.onended = cleanup;
-  audio.onerror = cleanup;
-  audio.play().catch(cleanup);
+  if (_isMobile){
+    _reactionAudioEl.src = ev.audio_url;
+    _setReacting(ev.persona_key, true);
+    const cleanup = () => {
+      _reactionAudioEl.onended = null;
+      _reactionAudioEl.onerror = null;
+      _setReacting(ev.persona_key, false);
+    };
+    _reactionAudioEl.onended = cleanup;
+    _reactionAudioEl.onerror = cleanup;
+    _reactionAudioEl.play().catch(cleanup);
+  } else {
+    const audio = new Audio(ev.audio_url);
+    audio.preload = "auto";
+    audio.volume = 0.65;
+    _reactionAudios.add(audio);
+    _setReacting(ev.persona_key, true);
+    const cleanup = () => {
+      _reactionAudios.delete(audio);
+      _setReacting(ev.persona_key, false);
+    };
+    audio.onended = cleanup;
+    audio.onerror = cleanup;
+    audio.play().catch(cleanup);
+  }
 }
 
 function _stopAllAudio(){
-  // Called on chain_cancelled / reset / interrupt — stop current playback,
-  // clear queue, AND tear down any concurrent reaction overlays.
   _audioQueue.length = 0;
-  if (_currentAudio){
-    try { _currentAudio.pause(); _currentAudio.src = ""; } catch(_){}
-    _currentAudio = null;
-  }
+  try { _mainAudioEl.pause(); _mainAudioEl.removeAttribute("src"); _mainAudioEl.load(); } catch(_){}
   _audioPlaying = false;
   _currentMainTurnId = null;
+  try { _reactionAudioEl.pause(); _reactionAudioEl.removeAttribute("src"); _reactionAudioEl.load(); } catch(_){}
   for (const a of _reactionAudios){
     try { a.pause(); a.src = ""; } catch(_){}
   }
@@ -939,6 +969,7 @@ function openEventStream(){
 async function send(){
   const text = inputEl.value.trim();
   if (!text) return;
+  _unlockAudio();
   inputEl.value = ""; sendBtn.disabled = true;
   try {
     await fetch("/turn", {
@@ -1082,7 +1113,9 @@ function setupRecognition(){
     clearMicError();
     micBtn.classList.add("recording");
     inputEl.classList.add("listening");
-    inputEl.placeholder = "Listening… (headphones recommended — speak any time to interrupt)";
+    inputEl.placeholder = _isMobile
+      ? "Listening… speak when panel is quiet"
+      : "Listening… (headphones recommended — speak any time to interrupt)";
     setSpeaking("you");
   };
 
@@ -1198,14 +1231,16 @@ async function ensureMicPermission(){
 async function startMic(){
   clearMicError();
   consecutiveQuickEnds = 0;
+  _unlockAudio();
   if (!recognition) recognition = setupRecognition();
   if (!recognition) return;
   const ok = await ensureMicPermission();
   if (!ok) return;
   wantsListening = true;
   if (!actuallyListening){ try { recognition.start(); } catch(_){} }
-  // Phase B: start the dedicated VAD in parallel for echo-resistant interrupts.
-  startVAD();   // fire-and-forget; async setup, won't block the mic start
+  if (!_isMobile){
+    startVAD();
+  }
 }
 async function stopMic(){
   wantsListening = false;
