@@ -93,6 +93,34 @@ def _record_speaker(persona_key: str) -> None:
     del _recent_speakers[HISTORY_WINDOW:]
 
 
+# --------------------------------------------------------------------------
+# Per-persona enable/disable. A muted persona is excluded from the parallel
+# consideration loop and can't be picked. Useful when a persona is too
+# disruptive for the current vibe (Reed especially, since he's deliberately
+# a pain). State is process-wide; toggled via POST /personas/<key>/enabled.
+# --------------------------------------------------------------------------
+_disabled: set[str] = set()
+
+
+def is_enabled(persona_key: str) -> bool:
+    return persona_key not in _disabled
+
+
+def set_enabled(persona_key: str, enabled: bool) -> bool:
+    """Returns True if the key was valid and state changed (or was redundant)."""
+    if persona_key not in PERSONAS:
+        return False
+    if enabled:
+        _disabled.discard(persona_key)
+    else:
+        _disabled.add(persona_key)
+    return True
+
+
+def get_enabled_map() -> dict[str, bool]:
+    return {k: is_enabled(k) for k in PERSONAS.keys()}
+
+
 def detect_direct_address(text: str) -> str | None:
     """Return persona key if the utterance opens with a direct address."""
     if not text:
@@ -202,7 +230,9 @@ async def orchestrate(
     Returns:
         (persona_key or None, list of {persona, urgency, reason} for logging)
     """
-    if forced_first and forced_first in PERSONAS:
+    # Direct address still wins — but only if that persona is enabled.
+    # If the user addresses a muted persona, fall through to the normal vote.
+    if forced_first and forced_first in PERSONAS and is_enabled(forced_first):
         _record_speaker(forced_first)
         return forced_first, [{
             "persona": forced_first, "urgency": 10, "bonus": 0,
@@ -210,9 +240,11 @@ async def orchestrate(
         }]
 
     loop = asyncio.get_running_loop()
-    keys = list(PERSONAS.keys())
+    keys = [k for k in PERSONAS.keys() if is_enabled(k)]
+    if not keys:
+        return None, []   # everyone is muted
 
-    # Fan out: each persona evaluates in parallel.
+    # Fan out: each enabled persona evaluates in parallel.
     results = await asyncio.gather(*[
         loop.run_in_executor(None, _call_haiku_consider, PERSONAS[k], transcript)
         for k in keys

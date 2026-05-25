@@ -34,7 +34,13 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)  # shell may pre-set blank ANTHROPIC_API_KEY
 
-from director import detect_direct_address, orchestrate, reset_history  # noqa: E402
+from director import (  # noqa: E402
+    detect_direct_address,
+    orchestrate,
+    reset_history,
+    set_enabled as set_persona_enabled,
+    is_enabled as persona_is_enabled,
+)
 from personas import PERSONAS  # noqa: E402
 from health_record import get_record, set_record, format_for_prompt as record_for_prompt  # noqa: E402
 
@@ -331,10 +337,24 @@ async def handle_personas(request: web.Request) -> web.Response:
                 "name": p.name,
                 "is_bad_actor": p.is_bad_actor,
                 "voice_id": p.voice_id,
+                "enabled": persona_is_enabled(k),
             }
             for k, p in PERSONAS.items()
         }
     )
+
+
+async def handle_persona_enabled(request: web.Request) -> web.Response:
+    key = request.match_info["key"]
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid json"}, status=400)
+    enabled = bool(body.get("enabled"))
+    if not set_persona_enabled(key, enabled):
+        return web.json_response({"error": f"unknown persona '{key}'"}, status=404)
+    log.info("persona %s -> %s", key, "enabled" if enabled else "disabled")
+    return web.json_response({"key": key, "enabled": enabled})
 
 
 async def handle_get_record(request: web.Request) -> web.Response:
@@ -405,6 +425,7 @@ def make_app() -> web.Application:
     app.router.add_get("/avatar/{key}", handle_avatar)
     app.router.add_get("/health_record", handle_get_record)
     app.router.add_post("/health_record", handle_set_record)
+    app.router.add_post("/personas/{key}/enabled", handle_persona_enabled)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     return app

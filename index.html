@@ -72,6 +72,17 @@
   .tile .badge{position:absolute;top:10px;right:10px;font-size:10px;font-weight:700;letter-spacing:.5px;
     padding:3px 8px;border-radius:6px;background:rgba(0,0,0,.5);color:var(--mute);
     text-transform:uppercase;border:1px solid var(--line);}
+  /* per-tile mute toggle (top-right). Stays subtle until hover; click to flip. */
+  .tile .toggle{position:absolute;top:8px;right:8px;width:26px;height:26px;
+    border-radius:50%;background:rgba(0,0,0,.5);border:1px solid var(--line);
+    color:var(--mute);cursor:pointer;font-size:13px;line-height:1;
+    display:flex;align-items:center;justify-content:center;
+    opacity:.4;transition:opacity .2s ease;}
+  .tile:hover .toggle{opacity:1;}
+  .tile.disabled .toggle{opacity:.9;color:var(--warn2);}
+  /* disabled state: dim the tile, no speaking glow allowed */
+  .tile.disabled{opacity:.35;filter:grayscale(.5);}
+  .tile.disabled.speaking{transform:none;box-shadow:none;border-color:var(--line);}
 
   /* speaking-state highlight */
   .tile.speaking{transform:scale(1.015);}
@@ -269,22 +280,53 @@ let PERSONAS = {};
 function renderTile(key, persona, container, opts = {}){
   const tile = document.createElement("div");
   tile.className = "tile"; tile.dataset.key = key; tile.id = `tile-${key}`;
-  const badge = opts.badAct ? `<div class="badge">panelist</div>` : "";
+  if (persona.enabled === false) tile.classList.add("disabled");
   const fallback = AVATARS[key] || "🗣";
+  // The "you" tile gets no mute toggle — you're always on.
+  const toggleBtn = (key !== "you")
+    ? `<button class="toggle" title="Mute / unmute this persona">${persona.enabled === false ? "🔇" : "✕"}</button>`
+    : "";
   tile.innerHTML = `
     <div class="avatar"><img alt="" /></div>
-    ${badge}
+    ${toggleBtn}
     <div class="nameplate">
       <span>${persona.name}</span>
       <span class="role">· ${ROLES[key] || ""}</span>
       <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
     </div>`;
   const img = tile.querySelector("img");
-  // try the photo; if not present (404), swap in the emoji
   img.onerror = () => { img.parentElement.innerHTML = fallback; };
-  img.src = `/avatar/${key}?v=${Date.now()}`;  // bust cache during demo dev
+  img.src = `/avatar/${key}?v=${Date.now()}`;
+  const tbtn = tile.querySelector(".toggle");
+  if (tbtn) tbtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    togglePersona(key);
+  });
   container.appendChild(tile);
   return tile;
+}
+
+async function togglePersona(key){
+  const tile = document.getElementById(`tile-${key}`);
+  if (!tile) return;
+  const wasEnabled = !tile.classList.contains("disabled");
+  const newState = !wasEnabled;
+  // optimistic UI
+  tile.classList.toggle("disabled", !newState);
+  const btn = tile.querySelector(".toggle");
+  if (btn) btn.textContent = newState ? "✕" : "🔇";
+  try {
+    await fetch(`/personas/${key}/enabled`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({enabled: newState}),
+    });
+  } catch(e){
+    // revert on failure
+    tile.classList.toggle("disabled", wasEnabled ? false : true);
+    if (btn) btn.textContent = wasEnabled ? "✕" : "🔇";
+    console.warn("toggle failed", e);
+  }
 }
 
 async function loadPersonas(){
