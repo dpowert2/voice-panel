@@ -652,12 +652,19 @@ async function interrupt(){
   _stopAllAudio();
   _chainActive = false;
   setSpeaking(null);
+  // Flush Web Speech's audio buffer — it may have captured the panel's
+  // voice from speakers up to this point. onend will restart it (via
+  // the existing wantsListening logic) within ~200ms, ready for the
+  // user's actual utterance now that the gate is open.
+  if (recognition && actuallyListening){
+    try { recognition.stop(); } catch(_){}
+  }
+  inputEl.value = "";
   try {
     await fetch("/interrupt", { method: "POST" });
   } catch(e){
     console.warn("interrupt POST failed", e);
   } finally {
-    // Allow next interrupt after a short cool-down
     setTimeout(() => { _interruptInFlight = false; }, 500);
   }
 }
@@ -929,6 +936,19 @@ function setupRecognition(){
       else interim += res[0].transcript;
     }
     if (interim || final) consecutiveQuickEnds = 0;  // we're getting audio
+    // PHASE B+: while the panel is talking, Web Speech often transcribes
+    // the panel's own audio bleeding through speakers. Discard those —
+    // they are NOT real user input. Interruption (VAD) handles the
+    // "user wants to speak now" path by stopping the panel first, which
+    // clears _audioPlaying/_chainActive and re-opens this gate.
+    if (_audioPlaying || _chainActive){
+      if (interim || final){
+        console.log("[mic gate] panel active — ignoring transcript:",
+                    (final || interim).trim().slice(0, 120));
+      }
+      inputEl.value = "";    // don't even show in the input box
+      return;
+    }
     if (interim) inputEl.value = interim.trim();
     if (final.trim()){
       const now = Date.now();
