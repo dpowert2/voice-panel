@@ -436,11 +436,12 @@ function _playNextAudio(){
     _audioPlaying = false;
     _currentAudio = null;
     setSpeaking(null);
-    if (!_chainActive) window.__resumeMicAfterAudio?.();
     return;
   }
   _audioPlaying = true;
-  window.__pauseMicForAudio?.();
+  // Mic STAYS LIVE during playback (Phase C) — we need it on so VAD can
+  // detect the user starting to speak over the panel. Echo handling is
+  // Phase B's job; for now lean on browser AEC + headphones recommendation.
   const { url, persona_key } = _audioQueue.shift();
   setSpeaking(persona_key);
   const audio = new Audio(url);
@@ -462,13 +463,37 @@ function enqueueTurnAudio(turnStartEv){
 }
 
 function _stopAllAudio(){
-  // Called on chain_cancelled / reset — stop current playback and clear queue.
+  // Called on chain_cancelled / reset / interrupt — stop current playback and clear queue.
   _audioQueue.length = 0;
   if (_currentAudio){
     try { _currentAudio.pause(); _currentAudio.src = ""; } catch(_){}
     _currentAudio = null;
   }
   _audioPlaying = false;
+}
+
+/* PHASE C: user is speaking over the panel — stop everything immediately.
+   1. Local: pause current <audio>, clear queue (browser keeps prefetching
+      otherwise via the chunked /turn-audio endpoint).
+   2. Backend: POST /interrupt to cancel the chain task. This cascades:
+      AudioStream.cancel() in the chain's CancelledError handler, which
+      releases all in-flight /turn-audio HTTP handlers.
+   The user's next onresult will naturally POST /turn with their utterance. */
+let _interruptInFlight = false;
+async function interrupt(){
+  if (_interruptInFlight) return;       // dedupe — onspeechstart can fire multiple times
+  _interruptInFlight = true;
+  _stopAllAudio();
+  _chainActive = false;
+  setSpeaking(null);
+  try {
+    await fetch("/interrupt", { method: "POST" });
+  } catch(e){
+    console.warn("interrupt POST failed", e);
+  } finally {
+    // Allow next interrupt after a short cool-down
+    setTimeout(() => { _interruptInFlight = false; }, 500);
+  }
 }
 
 /* ---- SSE handler --------------------------------------------- */
@@ -665,8 +690,19 @@ function setupRecognition(){
     clearMicError();
     micBtn.classList.add("recording");
     inputEl.classList.add("listening");
-    inputEl.placeholder = "Listening…";
+    inputEl.placeholder = "Listening… (headphones recommended — speak any time to interrupt)";
     setSpeaking("you");
+  };
+
+  /* PHASE C: if the user starts speaking while the panel is currently
+     talking (audio playing or chain mid-flight), treat it as an interrupt —
+     stop the panel within ~200ms and pivot to the user's input. The
+     subsequent onresult will fire a normal /turn with their transcript. */
+  r.onspeechstart = () => {
+    if (_audioPlaying || _chainActive) {
+      console.log("[interrupt] user speech detected over panel");
+      interrupt();
+    }
   };
   r.onend = () => {
     actuallyListening = false;
@@ -770,18 +806,12 @@ micBtn.addEventListener("click", () => {
   else startMic();
 });
 
-window.__pauseMicForAudio = () => {
-  if (!wantsListening) return;
-  suppressedForAudio = true;
-  if (actuallyListening){ try { recognition.stop(); } catch(_){} }
-};
-window.__resumeMicAfterAudio = () => {
-  suppressedForAudio = false;
-  if (wantsListening && !actuallyListening){
-    clearTimeout(restartTimer);
-    restartTimer = setTimeout(() => { try { recognition.start(); } catch(_){} }, 150);
-  }
-};
+// Mic-pause hooks — kept callable so any straggling call site doesn't crash,
+// but they no-op now. Phase C wants the mic LIVE during panel playback so
+// onspeechstart can fire and trigger interrupt(). Phase B may bring back
+// targeted pausing if echo proves intractable.
+window.__pauseMicForAudio = () => {};
+window.__resumeMicAfterAudio = () => {};
 
 async function loadVersion(){
   try {

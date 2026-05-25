@@ -646,6 +646,22 @@ async def handle_set_record(request: web.Request) -> web.Response:
     return web.json_response(merged)
 
 
+async def handle_interrupt(request: web.Request) -> web.Response:
+    """Cancel the current chain task. Called by the frontend the moment it
+    detects the user starting to speak over the panel. Streams die quickly
+    via AudioStream.cancel() in the chain's CancelledError handler."""
+    global _chain_task
+    if _chain_task and not _chain_task.done():
+        log.info("interrupt: cancelling chain task")
+        _chain_task.cancel()
+        try:
+            await _chain_task
+        except asyncio.CancelledError:
+            pass
+        return web.json_response({"ok": True, "interrupted": True})
+    return web.json_response({"ok": True, "interrupted": False})
+
+
 async def handle_reset(request: web.Request) -> web.Response:
     global _chain_task
     if _chain_task and not _chain_task.done():
@@ -735,6 +751,7 @@ def make_app() -> web.Application:
     app.router.add_get("/health_record", handle_get_record)
     app.router.add_post("/health_record", handle_set_record)
     app.router.add_post("/personas/{key}/enabled", handle_persona_enabled)
+    app.router.add_post("/interrupt", handle_interrupt)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     return app
