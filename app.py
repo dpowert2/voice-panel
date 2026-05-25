@@ -364,6 +364,173 @@ async def _eleven_stream_input(
                     pass
 
 
+# ---------------------------------------------------------------------------
+# Phase D: backchannel reactions (fake multiplex)
+# ---------------------------------------------------------------------------
+# While the main persona is mid-sentence, ask Haiku whether any OTHER
+# panelist would naturally cut in with a 2-5 word reaction ("Hold on—",
+# "No, that's wrong", "Mhm"). Generate the reaction's TTS via Flash for
+# low latency. The frontend plays it on a second <audio> element at
+# 60% volume so it overlaps audibly with the main turn.
+# ---------------------------------------------------------------------------
+
+REACTION_MODEL = "claude-haiku-4-5-20251001"
+REACTION_DELAY_SECONDS = 1.5  # let main audio start before fanning a reaction
+
+
+def _reaction_system_prompt(main_persona, others: list) -> str:
+    others_desc = ", ".join(
+        f"{p.name} ({p.key})" for p in others
+    )
+    return (
+        f"You are scripting realistic panel-TV dynamics. {main_persona.name} "
+        f"is currently speaking. Decide if any OTHER panelist would naturally "
+        f"cut in with a brief 2-5 word reaction RIGHT NOW (mid-sentence "
+        f"interjection, not a full reply).\n\n"
+        f"Other panelists who could react: {others_desc}.\n\n"
+        f"Examples of natural reactions:\n"
+        f"  - 'Hold on —'\n"
+        f"  - 'No, that's wrong.'\n"
+        f"  - 'Mhm.'\n"
+        f"  - 'Wait, what?'\n"
+        f"  - 'I disagree.'\n"
+        f"  - 'Come on.'\n"
+        f"  - 'That's not right.'\n\n"
+        f"Be SELECTIVE — most turns get 0 reactions. Only suggest one if it "
+        f"would genuinely happen on TV (controversial claim, misleading "
+        f"statement, high-energy moment). Don't manufacture reactions.\n\n"
+        f"Reply with ONLY a JSON list (max 1 reaction):\n"
+        f'  [] or [{{"persona": "<key>", "text": "<2-5 words>"}}]'
+    )
+
+
+def _call_haiku_reactions(main_persona_key: str, transcript_context: str) -> list[dict]:
+    """Sync Haiku call (runs in thread pool). Returns 0-1 reactions."""
+    main = PERSONAS[main_persona_key]
+    others = [
+        p for k, p in PERSONAS.items()
+        if k != main_persona_key and k in PERSONAS  # all enabled handled at orchestrate-time
+    ]
+    try:
+        body = json.dumps({
+            "model": REACTION_MODEL,
+            "max_tokens": 80,
+            "system": _reaction_system_prompt(main, others),
+            "messages": [{
+                "role": "user",
+                "content": transcript_context[-4000:] or "(empty)",
+            }],
+        }).encode()
+        import urllib.request
+        req = urllib.request.Request(
+            ANTHROPIC_URL,
+            data=body,
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        text = ""
+        for part in data.get("content", []):
+            if part.get("type") == "text":
+                text = part["text"]
+                break
+        # Tolerate fences and stray prose; pull the first JSON array.
+        text = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", text, flags=re.MULTILINE).strip()
+        m = re.search(r"\[.*?\]", text, re.DOTALL)
+        if m:
+            text = m.group(0)
+        parsed = json.loads(text)
+        if not isinstance(parsed, list):
+            return []
+        # Validate each reaction; cap to 1
+        valid = []
+        for r in parsed[:1]:
+            if not isinstance(r, dict):
+                continue
+            pk = (r.get("persona") or "").lower()
+            rt = (r.get("text") or "").strip()
+            if pk in PERSONAS and pk != main_persona_key and rt and len(rt) <= 80:
+                from director import is_enabled as _enabled
+                if _enabled(pk):
+                    valid.append({"persona": pk, "text": rt})
+        return valid
+    except Exception as e:
+        log.warning("reaction Haiku failed: %s", e)
+        return []
+
+
+async def _emit_reaction(reaction: dict, parent_turn_id: str) -> None:
+    """Generate TTS for one reaction and publish it. Reaction audio is brief
+    (2-5 words) so we can use a single HTTP call, no streaming WS needed."""
+    persona = PERSONAS[reaction["persona"]]
+    text = reaction["text"]
+    reaction_id = secrets.token_hex(8)
+    stream = AudioStream()
+    _audio_streams[reaction_id] = stream
+
+    # Publish immediately so the frontend can start fetching the audio URL.
+    await _publish({
+        "type": "reaction",
+        "id": reaction_id,
+        "parent_id": parent_turn_id,
+        "speaker": persona.name,
+        "persona_key": persona.key,
+        "is_bad_actor": persona.is_bad_actor,
+        "text": text,
+        "audio_url": f"/turn-audio/{reaction_id}",
+    })
+
+    try:
+        # Use the HTTP /stream endpoint with Flash for sub-200ms first audio.
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{persona.voice_id}/stream"
+        payload = {
+            "text": text,
+            "model_id": ELEVEN_STREAM_MODEL,  # eleven_flash_v2_5
+            "voice_settings": _VOICE_SETTINGS.get(persona.key, _VOICE_SETTINGS["vale"]),
+        }
+        headers = {
+            "xi-api-key": ELEVEN_API_KEY,
+            "Content-Type": "application/json",
+            "Accept": "audio/mpeg",
+        }
+        async with _http.post(url, json=payload, headers=headers) as r:
+            r.raise_for_status()
+            async for chunk in r.content.iter_chunked(4096):
+                await stream.push(chunk)
+    except Exception as e:
+        log.warning("reaction TTS failed for %s: %s", persona.key, e)
+    finally:
+        await stream.push(None)
+
+
+async def _maybe_react(
+    main_persona_key: str, transcript_context: str, parent_turn_id: str
+) -> None:
+    """Fire a reaction (if any) shortly after a main turn starts. Runs as a
+    fire-and-forget background task — never lets its errors break the chain."""
+    try:
+        await asyncio.sleep(REACTION_DELAY_SECONDS)
+        loop = asyncio.get_running_loop()
+        reactions = await loop.run_in_executor(
+            None, _call_haiku_reactions, main_persona_key, transcript_context
+        )
+        if not reactions:
+            return
+        await asyncio.gather(
+            *[_emit_reaction(r, parent_turn_id) for r in reactions],
+            return_exceptions=True,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("reaction generation failed")
+
+
 # Periodically clean up abandoned audio streams so memory doesn't grow.
 async def _audio_gc_loop() -> None:
     while True:
@@ -483,6 +650,11 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
                 "is_bad_actor": persona.is_bad_actor,
                 "audio_url": f"/turn-audio/{turn_id}",
             })
+
+            # Phase D: in parallel, ask Haiku if any other panelist would
+            # cut in with a brief reaction. Fire-and-forget — never blocks
+            # the main chain progress.
+            asyncio.create_task(_maybe_react(who, transcript_ctx, turn_id))
 
             async def _text_source(buf: list[str]):
                 async for tok in _anthropic_stream(persona, transcript_ctx):

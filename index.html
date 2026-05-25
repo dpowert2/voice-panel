@@ -353,12 +353,32 @@ async function loadPersonas(){
   renderTile("you", { name: "You" }, youRow);
 }
 
-/* ---- active-speaker highlight --------------------------------- */
-function setSpeaking(key){
+/* ---- active-speaker highlight (Phase D: multi-tile support) -- *
+ * The main turn's speaker is tracked separately from "reaction" speakers
+ * so a brief overlap lights up both tiles simultaneously. _refresh
+ * rebuilds the .speaking class set from current state.                 */
+let _mainSpeakingKey = null;
+const _reactingKeys = new Set();
+
+function _refreshTileGlow(){
   document.querySelectorAll(".tile.speaking").forEach(t => t.classList.remove("speaking"));
-  if (!key) return;
-  const el = document.getElementById(`tile-${key}`);
-  if (el) el.classList.add("speaking");
+  if (_mainSpeakingKey){
+    document.getElementById(`tile-${_mainSpeakingKey}`)?.classList.add("speaking");
+  }
+  for (const k of _reactingKeys){
+    document.getElementById(`tile-${k}`)?.classList.add("speaking");
+  }
+}
+
+function setSpeaking(key){
+  _mainSpeakingKey = key;
+  _refreshTileGlow();
+}
+
+function _setReacting(key, on){
+  if (on) _reactingKeys.add(key);
+  else _reactingKeys.delete(key);
+  _refreshTileGlow();
 }
 
 /* ---- detection feed (right panel) ---------------------------- */
@@ -382,6 +402,13 @@ function addEvent(ev){
     body = `<div class="row1">
               <span class="type">said</span>
               <span class="who">${ev.speaker}</span>
+            </div>
+            <div class="text"></div>`;
+  } else if (ev.type === "reaction"){
+    body = `<div class="row1">
+              <span class="type">reaction</span>
+              <span class="who">${ev.speaker}</span>
+              <span class="flag ${ev.is_bad_actor ? "bad" : "ok"}">${ev.is_bad_actor ? "BAD ACTOR" : "OK"}</span>
             </div>
             <div class="text"></div>`;
   } else if (ev.type === "turn"){
@@ -426,15 +453,21 @@ function addEvent(ev){
  * soon as the first chunk arrives (~500ms after we get turn_start).
  * Turns play strictly in order: we queue URLs and play them sequentially.
  * --------------------------------------------------------------- */
-const _audioQueue = [];      // pending {url, persona_key} entries
+const _audioQueue = [];      // pending {url, persona_key, turn_id} entries
 let _audioPlaying = false;
 let _chainActive  = false;
 let _currentAudio = null;    // the <audio> element currently playing
+let _currentMainTurnId = null;   // id of the turn currently playing — used by reactions
+
+/* Phase D: reaction audio elements playing concurrently with the main turn.
+   Tracked so _stopAllAudio (on interrupt / reset) can tear them down. */
+const _reactionAudios = new Set();
 
 function _playNextAudio(){
   if (_audioQueue.length === 0){
     _audioPlaying = false;
     _currentAudio = null;
+    _currentMainTurnId = null;
     setSpeaking(null);
     return;
   }
@@ -442,12 +475,16 @@ function _playNextAudio(){
   // Mic STAYS LIVE during playback (Phase C) — we need it on so VAD can
   // detect the user starting to speak over the panel. Echo handling is
   // Phase B's job; for now lean on browser AEC + headphones recommendation.
-  const { url, persona_key } = _audioQueue.shift();
+  const { url, persona_key, turn_id } = _audioQueue.shift();
+  _currentMainTurnId = turn_id || null;
   setSpeaking(persona_key);
   const audio = new Audio(url);
   audio.preload = "auto";
   _currentAudio = audio;
-  const next = () => { if (_currentAudio === audio) _currentAudio = null; _playNextAudio(); };
+  const next = () => {
+    if (_currentAudio === audio){ _currentAudio = null; _currentMainTurnId = null; }
+    _playNextAudio();
+  };
   audio.onended = next;
   audio.onerror = (e) => { console.warn("audio error", e); next(); };
   audio.play().catch((e) => { console.warn("audio play rejected", e); next(); });
@@ -458,18 +495,58 @@ function enqueueTurnAudio(turnStartEv){
   _audioQueue.push({
     url: turnStartEv.audio_url,
     persona_key: turnStartEv.persona_key,
+    turn_id: turnStartEv.id,
   });
   if (!_audioPlaying) _playNextAudio();
 }
 
+/* Phase D: play a reaction overlay at reduced volume during the parent turn.
+   Reaction is dropped if the parent turn has already finished — too late to be
+   meaningful. Multi-tile glow lights up the reacting persona's tile alongside
+   the main speaker's. */
+function playReaction(ev){
+  // Only play if its parent turn is the one currently playing (or imminent).
+  // If the main turn already ended (parent_id mismatch or no audio at all),
+  // the reaction is stale — drop it.
+  if (!ev.audio_url) return;
+  if (_currentMainTurnId && _currentMainTurnId !== ev.parent_id){
+    console.log("[reaction] dropping stale reaction (parent finished)", ev);
+    return;
+  }
+  if (!_currentAudio && !_chainActive){
+    console.log("[reaction] no main turn active, dropping", ev);
+    return;
+  }
+  const audio = new Audio(ev.audio_url);
+  audio.preload = "auto";
+  audio.volume = 0.65;        // ducked under main turn audio
+  _reactionAudios.add(audio);
+  _setReacting(ev.persona_key, true);
+  const cleanup = () => {
+    _reactionAudios.delete(audio);
+    _setReacting(ev.persona_key, false);
+  };
+  audio.onended = cleanup;
+  audio.onerror = cleanup;
+  audio.play().catch(cleanup);
+}
+
 function _stopAllAudio(){
-  // Called on chain_cancelled / reset / interrupt — stop current playback and clear queue.
+  // Called on chain_cancelled / reset / interrupt — stop current playback,
+  // clear queue, AND tear down any concurrent reaction overlays.
   _audioQueue.length = 0;
   if (_currentAudio){
     try { _currentAudio.pause(); _currentAudio.src = ""; } catch(_){}
     _currentAudio = null;
   }
   _audioPlaying = false;
+  _currentMainTurnId = null;
+  for (const a of _reactionAudios){
+    try { a.pause(); a.src = ""; } catch(_){}
+  }
+  _reactionAudios.clear();
+  _reactingKeys.clear();
+  _refreshTileGlow();
 }
 
 /* PHASE B: dedicated VAD on a second mic stream.
@@ -591,6 +668,10 @@ function handleSSE(ev){
   if (ev.type === "turn_start"){
     _chainActive = true;
     enqueueTurnAudio(ev);
+  } else if (ev.type === "reaction"){
+    // Phase D: backchannel interjection — plays at 60% volume overlapping
+    // with current main turn audio. Dropped if main turn already ended.
+    playReaction(ev);
   } else if (ev.type === "turn_end"){
     // text-only — already rendered in detection feed via addEvent
   } else if (ev.type === "turn"){
