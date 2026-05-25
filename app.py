@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)  # shell may pre-set blank ANTHROPIC_API_KEY
 
-from director import detect_direct_address, orchestrate  # noqa: E402
+from director import detect_direct_address, orchestrate, reset_history  # noqa: E402
 from personas import PERSONAS  # noqa: E402
 from health_record import get_record, set_record, format_for_prompt as record_for_prompt  # noqa: E402
 
@@ -211,12 +211,15 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
                 forced_first=forced,
                 last_speaker=last_who,
             )
-            # Always log the parallel vote for visibility — even when forced,
-            # so the detection team / observer can see what each agent thought.
+            # Always log the parallel vote for visibility — show raw urgency,
+            # diversity bonus, and the final adjusted score that decided it.
             log.info(
-                "chain turn %d: orchestrate → %s | votes: %s",
+                "chain turn %d: orchestrate → %s | %s",
                 i, who,
-                ", ".join(f"{c['persona']}={c['urgency']}" for c in considerations),
+                ", ".join(
+                    f"{c['persona']}={c['urgency']}{c.get('bonus',0):+d}={c.get('adjusted', c['urgency'])}"
+                    for c in considerations
+                ),
             )
 
             if who is None or who not in PERSONAS:
@@ -359,6 +362,7 @@ async def handle_reset(request: web.Request) -> web.Response:
             pass
     _transcript.clear()
     _events_log.clear()
+    reset_history()   # also clear diversity-weighting memory
     await _publish({"type": "reset"})
     return web.json_response({"ok": True})
 

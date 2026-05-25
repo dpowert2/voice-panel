@@ -54,6 +54,45 @@ _DIRECT_ADDRESS_RE = re.compile(
 _PERSONA_KEYS = set(PERSONAS.keys())
 
 
+# --------------------------------------------------------------------------
+# Diversity weighting — soft bonus/penalty on top of each persona's
+# self-rated urgency, so the panel doesn't get monopolised by whichever
+# persona's lane fits best most of the time (typically Vale on medical
+# topics). Quiet personas get a boost; recently-loud personas get a hit.
+# State persists across /turn calls within a session; cleared on /reset.
+# --------------------------------------------------------------------------
+_recent_speakers: list[str] = []   # most recent first
+HISTORY_WINDOW = 8
+
+
+def reset_history() -> None:
+    """Clear who-spoke-when memory. Call this on POST /reset."""
+    _recent_speakers.clear()
+
+
+def _diversity_bonus(persona_key: str) -> int:
+    """Bonus added to urgency. Tuned to nudge, not override:
+      +3 = haven't spoken in the recent window at all
+      -3 = spoke 1 turn ago (penalise back-to-back when allowed)
+      -1 = spoke 2 turns ago
+       0 = spoke 3 turns ago
+      +1 = spoke 4+ turns ago (slight encouragement to return)
+    A persona with raw urgency 9 still beats one at 4+3=7."""
+    if persona_key not in _recent_speakers:
+        return 3
+    idx = _recent_speakers.index(persona_key)  # 0 = most recent
+    if idx == 0: return -4   # just spoke (also barred by last_speaker filter)
+    if idx == 1: return -3
+    if idx == 2: return -1
+    if idx == 3: return 0
+    return 1
+
+
+def _record_speaker(persona_key: str) -> None:
+    _recent_speakers.insert(0, persona_key)
+    del _recent_speakers[HISTORY_WINDOW:]
+
+
 def detect_direct_address(text: str) -> str | None:
     """Return persona key if the utterance opens with a direct address."""
     if not text:
@@ -164,7 +203,11 @@ async def orchestrate(
         (persona_key or None, list of {persona, urgency, reason} for logging)
     """
     if forced_first and forced_first in PERSONAS:
-        return forced_first, [{"persona": forced_first, "urgency": 10, "reason": "directly addressed"}]
+        _record_speaker(forced_first)
+        return forced_first, [{
+            "persona": forced_first, "urgency": 10, "bonus": 0,
+            "adjusted": 10, "reason": "directly addressed",
+        }]
 
     loop = asyncio.get_running_loop()
     keys = list(PERSONAS.keys())
@@ -174,19 +217,29 @@ async def orchestrate(
         loop.run_in_executor(None, _call_haiku_consider, PERSONAS[k], transcript)
         for k in keys
     ])
-    considerations = [
-        {"persona": k, "urgency": r["urgency"], "reason": r["reason"]}
-        for k, r in zip(keys, results)
-    ]
+    considerations = []
+    for k, r in zip(keys, results):
+        bonus = _diversity_bonus(k)
+        considerations.append({
+            "persona": k,
+            "urgency": r["urgency"],         # raw self-rating
+            "bonus": bonus,                  # diversity adjustment
+            "adjusted": r["urgency"] + bonus,
+            "reason": r["reason"],
+        })
 
-    # Exclude whoever just spoke; pick the highest-urgency volunteer.
+    # Exclude whoever just spoke; pick highest ADJUSTED score.
     candidates = [c for c in considerations if c["persona"] != last_speaker]
     if not candidates:
         return None, considerations
 
-    best = max(candidates, key=lambda c: c["urgency"])
+    best = max(candidates, key=lambda c: c["adjusted"])
+    # Threshold check stays on RAW urgency — diversity bonus shouldn't
+    # push a genuinely uninterested persona over the speaking bar.
     if best["urgency"] < urgency_threshold:
         return None, considerations
+
+    _record_speaker(best["persona"])
     return best["persona"], considerations
 
 
