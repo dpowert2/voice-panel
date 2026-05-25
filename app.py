@@ -911,7 +911,10 @@ async def handle_reset(request: web.Request) -> web.Response:
 
 
 async def handle_index(request: web.Request) -> web.FileResponse:
-    return web.FileResponse(os.path.join(os.path.dirname(__file__), "index.html"))
+    return web.FileResponse(
+        os.path.join(os.path.dirname(__file__), "index.html"),
+        headers={"Cache-Control": "no-cache, no-store"},
+    )
 
 
 # Streams a turn's audio with chunked transfer-encoding. Browsers play it

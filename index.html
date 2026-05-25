@@ -254,14 +254,10 @@
 
     #ptt-bar{display:flex;flex-direction:column;gap:8px;padding:8px 10px;
       border-top:1px solid var(--line);background:var(--bg);flex-shrink:0;}
-    #ptt-utils{display:flex;gap:6px;align-items:center;}
-    #ptt-utils input{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--text);
-      padding:8px 10px;border-radius:8px;font-size:14px;outline:none;min-width:0;}
-    #ptt-utils input:focus{border-color:var(--vale);}
+    #ptt-utils{display:flex;gap:6px;align-items:center;justify-content:center;}
     #ptt-utils button{background:var(--panel);color:var(--text);border:1px solid var(--line);
       padding:8px 12px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;
       white-space:nowrap;}
-    #ptt-utils #send-mobile{background:var(--vale);color:#0b0d10;border-color:var(--vale);font-weight:600;}
 
     #ptt-bar{align-items:center;}
     #ptt{display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -1291,8 +1287,6 @@ window.__resumeMicAfterAudio = () => {};
 /* ---- mobile push-to-talk ------------------------------------ */
 const pttBtn       = $("#ptt");
 const pttLabel     = $("#ptt-label");
-const msgMobile    = $("#msg-mobile");
-const sendMobileBtn= $("#send-mobile");
 const recordMobileBtn = $("#record-btn-mobile");
 const resetMobileBtn  = $("#reset-mobile");
 
@@ -1370,8 +1364,12 @@ async function pttEnd(){
         setTimeout(() => { pttLabel.textContent = "Hold to talk"; }, 1500);
         return;
       }
-      msgMobile.value = text;
-      sendMobile();
+      pttLabel.textContent = "Hold to talk";
+      fetch("/turn", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ text }),
+      });
     } catch(e){
       console.warn("[PTT] transcription failed", e);
       pttLabel.textContent = "Error — try again";
@@ -1379,20 +1377,6 @@ async function pttEnd(){
     }
   };
   try { _pttRecorder.stop(); } catch(_){}
-}
-
-function sendMobile(){
-  const text = (msgMobile.value || "").trim();
-  if (!text) return;
-  msgMobile.value = "";
-  _unlockAudio();
-  fetch("/turn", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ text }),
-  }).then(() => {
-    pttLabel.textContent = "Hold to talk";
-  });
 }
 
 if (pttBtn){
@@ -1403,8 +1387,6 @@ if (pttBtn){
   pttBtn.addEventListener("mousedown", (e) => { if (!_isMobile) pttStart(); });
   pttBtn.addEventListener("mouseup", (e) => { if (!_isMobile) pttEnd(); });
 }
-if (sendMobileBtn) sendMobileBtn.addEventListener("click", sendMobile);
-if (msgMobile) msgMobile.addEventListener("keydown", (e) => { if (e.key === "Enter") sendMobile(); });
 if (recordMobileBtn) recordMobileBtn.addEventListener("click", openRecordModal);
 if (resetMobileBtn) resetMobileBtn.addEventListener("click", reset);
 
