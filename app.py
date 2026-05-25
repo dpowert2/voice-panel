@@ -28,9 +28,12 @@ import json
 import logging
 import os
 import re
+import secrets
 import subprocess
 import tempfile
+from typing import AsyncIterator
 
+import aiohttp
 from aiohttp import ClientSession, web
 from dotenv import load_dotenv
 
@@ -191,8 +194,192 @@ async def _say_tts(persona_key: str, text: str) -> bytes:
     return data
 
 
+# ---------------------------------------------------------------------------
+# Streaming pipeline (Phase A): Anthropic streaming → ElevenLabs WebSocket →
+# in-process audio buffer → browser fetches via /turn-audio/<id> with
+# chunked transfer-encoding. Target sub-second TTFA.
+# ---------------------------------------------------------------------------
+
+class AudioStream:
+    """Append-only per-turn audio buffer with a single async reader.
+    Producer pushes chunks (and finally None for EOS). Reader awaits chunks
+    in order. If the reader connects late, it gets all buffered chunks
+    first, then waits for new ones. Single consumer model — re-fetching
+    the same /turn-audio/<id> twice is not supported."""
+
+    def __init__(self) -> None:
+        self.chunks: list[bytes] = []
+        self.complete = False
+        self.cancelled = False
+        self._signal = asyncio.Event()
+
+    async def push(self, chunk: bytes | None) -> None:
+        if self.cancelled:
+            return
+        if chunk is None:
+            self.complete = True
+        else:
+            self.chunks.append(chunk)
+        self._signal.set()
+
+    def cancel(self) -> None:
+        self.cancelled = True
+        self.complete = True
+        self._signal.set()
+
+    async def read(self) -> AsyncIterator[bytes]:
+        i = 0
+        while True:
+            while i < len(self.chunks):
+                yield self.chunks[i]
+                i += 1
+            if self.complete:
+                return
+            self._signal.clear()
+            await self._signal.wait()
+
+
+_audio_streams: dict[str, AudioStream] = {}
+_AUDIO_STREAM_TTL_SECONDS = 120  # GC abandoned streams
+
+
+async def _anthropic_stream(persona, transcript_context: str) -> AsyncIterator[str]:
+    """Stream text deltas from Anthropic. First token typically ~300ms."""
+    system = persona.system_prompt + "\n\n" + record_for_prompt()
+    user_msg = (
+        f"Here is the panel discussion so far. You are {persona.name} — "
+        f"the other names belong to OTHER panelists, not you. Do not "
+        f"continue their lines, do not speak for them.\n\n"
+        f"--- TRANSCRIPT START ---\n"
+        f"{transcript_context}\n"
+        f"--- TRANSCRIPT END ---\n\n"
+        f"Now reply as {persona.name}, in one or two short spoken "
+        f"sentences. Reply with your words only — no name prefix."
+    )
+    body = {
+        "model": ANTHROPIC_MODEL,
+        "max_tokens": 110,
+        "stream": True,
+        "system": system,
+        "messages": [{"role": "user", "content": user_msg}],
+    }
+    async with _http.post(ANTHROPIC_URL, headers=ANTHROPIC_HEADERS, json=body) as r:
+        r.raise_for_status()
+        async for raw in r.content:
+            line = raw.strip()
+            if not line.startswith(b"data: "):
+                continue
+            data = line[6:]
+            if data == b"[DONE]":
+                break
+            try:
+                ev = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            if ev.get("type") == "content_block_delta":
+                delta = ev.get("delta") or {}
+                if delta.get("type") == "text_delta":
+                    text = delta.get("text") or ""
+                    if text:
+                        yield text
+
+
+# Faster ElevenLabs model for streaming — Flash gives us ~75ms TTFB so
+# audio starts playing fast. Quality is slightly less rich than
+# multilingual_v2, but the streaming wins dominate the perception.
+ELEVEN_STREAM_MODEL = "eleven_flash_v2_5"
+
+
+async def _eleven_stream_input(
+    persona, text_iter: AsyncIterator[str]
+) -> AsyncIterator[bytes]:
+    """Open ElevenLabs WebSocket, push text chunks in as they arrive from
+    the LLM, yield audio bytes as they come back. True streaming pipeline."""
+    voice_id = persona.voice_id
+    qs = (
+        f"?model_id={ELEVEN_STREAM_MODEL}"
+        f"&output_format=mp3_44100_128"
+        f"&auto_mode=false"
+    )
+    url = f"wss://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream-input{qs}"
+    headers = {"xi-api-key": ELEVEN_API_KEY}
+
+    async with _http.ws_connect(url, headers=headers, heartbeat=20) as ws:
+        # Initial BOS message with voice settings.
+        await ws.send_str(json.dumps({
+            "text": " ",
+            "voice_settings": _VOICE_SETTINGS.get(persona.key, _VOICE_SETTINGS["vale"]),
+            "generation_config": {
+                # ElevenLabs requires each value >= 50. [50, 80, 120, 160] =
+                # first audio after just 50 chars of text. Lower = lower TTFA
+                # at the cost of slightly less natural prosody across boundaries.
+                "chunk_length_schedule": [50, 80, 120, 160],
+            },
+        }))
+
+        async def send_text() -> None:
+            try:
+                async for chunk in text_iter:
+                    if not chunk:
+                        continue
+                    await ws.send_str(json.dumps({"text": chunk}))
+                # EOS — empty text signals "no more input, flush remaining".
+                await ws.send_str(json.dumps({"text": ""}))
+            except Exception:
+                log.exception("send_text failed")
+
+        producer = asyncio.create_task(send_text())
+        try:
+            async for msg in ws:
+                if msg.type == aiohttp.WSMsgType.TEXT:
+                    try:
+                        ev = json.loads(msg.data)
+                    except json.JSONDecodeError:
+                        continue
+                    # ElevenLabs sometimes sends an error frame instead of
+                    # audio (bad config, rate limit, etc). Surface and exit.
+                    if ev.get("error") or ev.get("code"):
+                        log.warning(
+                            "eleven WS error for %s: %s",
+                            persona.key, ev,
+                        )
+                        break
+                    audio_b64 = ev.get("audio")
+                    if audio_b64:
+                        try:
+                            yield base64.b64decode(audio_b64)
+                        except Exception:
+                            log.exception("bad audio chunk")
+                    if ev.get("isFinal"):
+                        break
+                elif msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSED):
+                    log.warning("eleven WS closed: %s", ws.exception())
+                    break
+        finally:
+            if not producer.done():
+                producer.cancel()
+                try:
+                    await producer
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+
+# Periodically clean up abandoned audio streams so memory doesn't grow.
+async def _audio_gc_loop() -> None:
+    while True:
+        await asyncio.sleep(60)
+        # Drop completed streams older than the TTL — track via a small
+        # registry. For now, just drop any that are complete; the chain
+        # publishes turn_end shortly after, frontend has already fetched.
+        for tid in list(_audio_streams.keys()):
+            stream = _audio_streams[tid]
+            if stream.complete:
+                _audio_streams.pop(tid, None)
+
+
 async def _tts(persona, text: str) -> tuple[str | None, str]:
-    """Try ElevenLabs, fall back to `say`. Returns (base64, mime)."""
+    """[Legacy] non-streaming TTS — kept for tests / fallback. Try
+    ElevenLabs, fall back to `say`. Returns (base64, mime)."""
     try:
         audio = await _eleven_tts(persona, text)
         return base64.b64encode(audio).decode(), "audio/mpeg"
@@ -281,33 +468,65 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
                 break
 
             persona = PERSONAS[who]
+            turn_id = secrets.token_hex(8)
+            stream = AudioStream()
+            _audio_streams[turn_id] = stream
+            text_buf: list[str] = []
+
+            # Tell the frontend immediately so it can open <audio
+            # src="/turn-audio/<id>"> while we're still generating.
+            await _publish({
+                "type": "turn_start",
+                "id": turn_id,
+                "speaker": persona.name,
+                "persona_key": persona.key,
+                "is_bad_actor": persona.is_bad_actor,
+                "audio_url": f"/turn-audio/{turn_id}",
+            })
+
+            async def _text_source(buf: list[str]):
+                async for tok in _anthropic_stream(persona, transcript_ctx):
+                    buf.append(tok)
+                    yield tok
+
             try:
-                reply_text = await _claude_reply(persona, transcript_ctx)
+                async for audio_chunk in _eleven_stream_input(
+                    persona, _text_source(text_buf)
+                ):
+                    await stream.push(audio_chunk)
             except Exception as e:
-                log.exception("claude failed in chain turn %d", i)
-                await _publish({"type": "error", "text": f"claude: {e}"})
-                break
-            reply_text = _strip_name_prefix(reply_text, persona)
+                log.exception("streaming pipeline failed in chain turn %d", i)
+                await _publish({"type": "error", "text": f"stream: {e}"})
+            finally:
+                await stream.push(None)  # EOS — releases the HTTP handler
+
+            reply_text = _strip_name_prefix("".join(text_buf), persona).strip()
             if not reply_text:
+                # Empty turn — clean up the unused stream and stop the chain.
+                _audio_streams.pop(turn_id, None)
                 break
 
             _transcript.append(f"{persona.name}: {reply_text}")
-            audio_b64, audio_mime = await _tts(persona, reply_text)
-
             await _publish({
-                "type": "turn",
+                "type": "turn_end",
+                "id": turn_id,
                 "speaker": persona.name,
                 "persona_key": persona.key,
                 "is_bad_actor": persona.is_bad_actor,
                 "text": reply_text,
-                "audio_b64": audio_b64,
-                "audio_mime": audio_mime,
             })
             last_who = who
             spoke_count += 1
-            await asyncio.sleep(INTER_TURN_DELAY)
+            # Streaming pipeline already provides natural pacing; no sleep
+            # needed. Orchestrator for next turn runs while audio is still
+            # playing on the frontend.
     except asyncio.CancelledError:
         log.info("chain cancelled (human interrupted)")
+        # Release any in-flight audio stream so the HTTP handler returns
+        # promptly and the browser can stop the <audio> element.
+        for stream in _audio_streams.values():
+            if not stream.complete:
+                stream.cancel()
         await _publish({"type": "chain_cancelled"})
         raise
     finally:
@@ -446,6 +665,33 @@ async def handle_index(request: web.Request) -> web.FileResponse:
     return web.FileResponse(os.path.join(os.path.dirname(__file__), "index.html"))
 
 
+# Streams a turn's audio with chunked transfer-encoding. Browsers play it
+# back progressively via a standard <audio src="/turn-audio/<id>"> element
+# — first sound hits the user's ears as soon as the first chunk arrives.
+async def handle_turn_audio(request: web.Request) -> web.StreamResponse:
+    turn_id = request.match_info["id"]
+    stream = _audio_streams.get(turn_id)
+    if not stream:
+        raise web.HTTPNotFound()
+    resp = web.StreamResponse(
+        status=200,
+        headers={
+            "Content-Type": "audio/mpeg",
+            "Cache-Control": "no-cache, no-store",
+            "X-Accel-Buffering": "no",  # disable proxy buffering (Render etc)
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+    await resp.prepare(request)
+    try:
+        async for chunk in stream.read():
+            await resp.write(chunk)
+        await resp.write_eof()
+    except (ConnectionResetError, asyncio.CancelledError):
+        pass
+    return resp
+
+
 # Avatar lookup: serves the first matching static/<key>.{jpg,jpeg,png,webp,gif}
 # Returns 404 cleanly so the frontend can fall back to an emoji avatar.
 _AVATAR_EXTS = ("jpg", "jpeg", "png", "webp", "gif")
@@ -460,12 +706,18 @@ async def handle_avatar(request: web.Request) -> web.FileResponse:
     raise web.HTTPNotFound()
 
 
+_gc_task: asyncio.Task | None = None
+
+
 async def on_startup(app: web.Application) -> None:
-    global _http
+    global _http, _gc_task
     _http = ClientSession()
+    _gc_task = asyncio.create_task(_audio_gc_loop())
 
 
 async def on_cleanup(app: web.Application) -> None:
+    if _gc_task and not _gc_task.done():
+        _gc_task.cancel()
     if _http is not None:
         await _http.close()
 
@@ -478,6 +730,7 @@ def make_app() -> web.Application:
     app.router.add_post("/reset", handle_reset)
     app.router.add_get("/events", handle_events)
     app.router.add_get("/avatar/{key}", handle_avatar)
+    app.router.add_get("/turn-audio/{id}", handle_turn_audio)
     app.router.add_get("/version", handle_version)
     app.router.add_get("/health_record", handle_get_record)
     app.router.add_post("/health_record", handle_set_record)

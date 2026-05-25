@@ -372,7 +372,20 @@ function addEvent(ev){
       : "";
     body = `<div class="row1"><span class="type">human</span><span class="who">user</span>${addr}</div>
             <div class="text"></div>`;
+  } else if (ev.type === "turn_start"){
+    body = `<div class="row1">
+              <span class="type">turn</span>
+              <span class="who">${ev.speaker}</span>
+              <span class="flag ${ev.is_bad_actor ? "bad" : "ok"}">${ev.is_bad_actor ? "BAD ACTOR" : "OK"}</span>
+            </div>`;
+  } else if (ev.type === "turn_end"){
+    body = `<div class="row1">
+              <span class="type">said</span>
+              <span class="who">${ev.speaker}</span>
+            </div>
+            <div class="text"></div>`;
   } else if (ev.type === "turn"){
+    // legacy non-streaming event
     body = `<div class="row1">
               <span class="type">turn</span>
               <span class="who">${ev.speaker}</span>
@@ -406,48 +419,83 @@ function addEvent(ev){
   eventsEl.scrollTop = eventsEl.scrollHeight;
 }
 
-/* ---- serial audio queue, drives speaker highlight ----------- */
-const _audioQueue = [];
+/* ---- serial streaming-audio queue --------------------------- *
+ * Each turn now has its own audio URL (/turn-audio/<id>) that the
+ * backend serves with chunked transfer-encoding. The browser plays it
+ * progressively via a plain <audio> element — first sound starts as
+ * soon as the first chunk arrives (~500ms after we get turn_start).
+ * Turns play strictly in order: we queue URLs and play them sequentially.
+ * --------------------------------------------------------------- */
+const _audioQueue = [];      // pending {url, persona_key} entries
 let _audioPlaying = false;
 let _chainActive  = false;
+let _currentAudio = null;    // the <audio> element currently playing
 
 function _playNextAudio(){
   if (_audioQueue.length === 0){
     _audioPlaying = false;
+    _currentAudio = null;
     setSpeaking(null);
     if (!_chainActive) window.__resumeMicAfterAudio?.();
     return;
   }
   _audioPlaying = true;
   window.__pauseMicForAudio?.();
-  const { b64, mime, persona_key } = _audioQueue.shift();
+  const { url, persona_key } = _audioQueue.shift();
   setSpeaking(persona_key);
-  const audio = new Audio(`data:${mime};base64,${b64}`);
-  const next = () => _playNextAudio();
+  const audio = new Audio(url);
+  audio.preload = "auto";
+  _currentAudio = audio;
+  const next = () => { if (_currentAudio === audio) _currentAudio = null; _playNextAudio(); };
   audio.onended = next;
-  audio.onerror = next;
-  audio.play().catch(next);
+  audio.onerror = (e) => { console.warn("audio error", e); next(); };
+  audio.play().catch((e) => { console.warn("audio play rejected", e); next(); });
 }
 
-function enqueueAudio(turnEvent){
-  if (!turnEvent.audio_b64) return;
+function enqueueTurnAudio(turnStartEv){
+  if (!turnStartEv.audio_url) return;
   _audioQueue.push({
-    b64: turnEvent.audio_b64,
-    mime: turnEvent.audio_mime || "audio/mpeg",
-    persona_key: turnEvent.persona_key,
+    url: turnStartEv.audio_url,
+    persona_key: turnStartEv.persona_key,
   });
   if (!_audioPlaying) _playNextAudio();
+}
+
+function _stopAllAudio(){
+  // Called on chain_cancelled / reset — stop current playback and clear queue.
+  _audioQueue.length = 0;
+  if (_currentAudio){
+    try { _currentAudio.pause(); _currentAudio.src = ""; } catch(_){}
+    _currentAudio = null;
+  }
+  _audioPlaying = false;
 }
 
 /* ---- SSE handler --------------------------------------------- */
 function handleSSE(ev){
   addEvent(ev);
-  if (ev.type === "turn"){
+  if (ev.type === "turn_start"){
     _chainActive = true;
-    enqueueAudio(ev);
+    enqueueTurnAudio(ev);
+  } else if (ev.type === "turn_end"){
+    // text-only — already rendered in detection feed via addEvent
+  } else if (ev.type === "turn"){
+    // Legacy event from older builds — still support if it ever appears
+    // (e.g. SSE history replay from a pre-streaming run).
+    _chainActive = true;
+    if (ev.audio_b64){
+      const mime = ev.audio_mime || "audio/mpeg";
+      _audioQueue.push({
+        url: `data:${mime};base64,${ev.audio_b64}`,
+        persona_key: ev.persona_key,
+      });
+      if (!_audioPlaying) _playNextAudio();
+    }
   } else if (ev.type === "chain_cancelled"){
-    _audioQueue.length = 0;
+    _stopAllAudio();
     _chainActive = false;
+    setSpeaking(null);
+    window.__resumeMicAfterAudio?.();
   } else if (ev.type === "chain_end"){
     _chainActive = false;
     if (!_audioPlaying){
@@ -455,7 +503,8 @@ function handleSSE(ev){
       window.__resumeMicAfterAudio?.();
     }
   } else if (ev.type === "reset"){
-    _audioQueue.length = 0; _audioPlaying = false; _chainActive = false;
+    _stopAllAudio();
+    _chainActive = false;
     setSpeaking(null);
   }
 }
