@@ -75,15 +75,22 @@
   .tile .badge{position:absolute;top:10px;right:10px;font-size:10px;font-weight:700;letter-spacing:.5px;
     padding:3px 8px;border-radius:6px;background:rgba(0,0,0,.5);color:var(--mute);
     text-transform:uppercase;border:1px solid var(--line);}
-  /* per-tile mute toggle (top-right). Stays subtle until hover; click to flip. */
-  .tile .toggle{position:absolute;top:8px;right:8px;width:26px;height:26px;
-    border-radius:50%;background:rgba(0,0,0,.5);border:1px solid var(--line);
-    color:var(--mute);cursor:pointer;font-size:13px;line-height:1;
-    display:flex;align-items:center;justify-content:center;
-    opacity:.4;transition:opacity .2s ease;}
+  /* per-tile mute toggle (iOS-style switch, top-right of each tile) */
+  .tile .toggle{position:absolute;top:10px;right:10px;
+    width:36px;height:20px;border-radius:10px;padding:0;border:none;
+    background:var(--ok);cursor:pointer;
+    opacity:.55;transition:background .2s ease, opacity .2s ease;
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.25);}
   .tile:hover .toggle{opacity:1;}
-  .tile.disabled .toggle{opacity:.9;color:var(--warn2);}
-  /* disabled state: dim the tile, no speaking glow allowed */
+  .tile .toggle::after{
+    content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;
+    border-radius:50%;background:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.45);
+    transform:translateX(16px);  /* on: knob on the right */
+    transition:transform .2s ease;}
+  .tile.disabled .toggle{background:var(--mute);opacity:.85;}
+  .tile.disabled .toggle::after{transform:translateX(0);}  /* off: knob on the left */
+  /* disabled tile: dim, no speaking glow allowed */
   .tile.disabled{opacity:.35;filter:grayscale(.5);}
   .tile.disabled.speaking{transform:none;box-shadow:none;border-color:var(--line);}
 
@@ -290,7 +297,7 @@ function renderTile(key, persona, container, opts = {}){
   const fallback = AVATARS[key] || "🗣";
   // The "you" tile gets no mute toggle — you're always on.
   const toggleBtn = (key !== "you")
-    ? `<button class="toggle" title="Mute / unmute this persona">${persona.enabled === false ? "🔇" : "✕"}</button>`
+    ? `<button class="toggle" aria-label="Mute / unmute ${persona.name}" title="Mute / unmute ${persona.name}"></button>`
     : "";
   tile.innerHTML = `
     <div class="avatar"><img alt="" /></div>
@@ -317,10 +324,8 @@ async function togglePersona(key){
   if (!tile) return;
   const wasEnabled = !tile.classList.contains("disabled");
   const newState = !wasEnabled;
-  // optimistic UI
+  // optimistic UI — the switch animation follows .disabled class
   tile.classList.toggle("disabled", !newState);
-  const btn = tile.querySelector(".toggle");
-  if (btn) btn.textContent = newState ? "✕" : "🔇";
   try {
     await fetch(`/personas/${key}/enabled`, {
       method: "POST",
@@ -328,9 +333,7 @@ async function togglePersona(key){
       body: JSON.stringify({enabled: newState}),
     });
   } catch(e){
-    // revert on failure
-    tile.classList.toggle("disabled", wasEnabled ? false : true);
-    if (btn) btn.textContent = wasEnabled ? "✕" : "🔇";
+    tile.classList.toggle("disabled", wasEnabled);  // revert
     console.warn("toggle failed", e);
   }
 }
