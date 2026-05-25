@@ -1,0 +1,19 @@
+# Render deployment config — connect this repo as a Web Service on Render
+# and it'll use these settings automatically. Set the env vars in the
+# Render dashboard (ANTHROPIC_API_KEY, ELEVEN_API_KEY) — DO NOT commit them.
+
+services:
+  - type: web
+    name: voice-panel
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: ANTHROPIC_API_KEY
+        sync: false   # set in the Render dashboard (Secrets)
+      - key: ELEVEN_API_KEY
+        sync: false   # set in the Render dashboard (Secrets)
+    autoDeploy: true

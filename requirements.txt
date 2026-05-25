@@ -1,0 +1,6 @@
+# Voice Panel — runtime dependencies (slim).
+# We deliberately don't use the anthropic SDK or livekit-agents — both have
+# heavy import trees. Direct HTTP via aiohttp + urllib keeps boot in <2s.
+
+aiohttp>=3.10
+python-dotenv>=1.0
