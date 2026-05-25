@@ -472,6 +472,95 @@ function _stopAllAudio(){
   _audioPlaying = false;
 }
 
+/* PHASE B: dedicated VAD on a second mic stream.
+ *
+ * Web Speech's onspeechstart fires too readily on echo bleed from
+ * laptop speakers, causing false interrupts. This VAD opens its own
+ * getUserMedia stream (with full AEC + noise suppression) and watches
+ * RMS in real time. An interrupt only fires after sustained activity
+ * above a threshold typical of actual speech (~0.025) and well above
+ * residual echo (~0.005 with browser AEC on).
+ *
+ * Two mic streams from the same device is fine in modern browsers.
+ * If this VAD fails to start (permissions, AudioContext blocked etc),
+ * onspeechstart in Web Speech is the fallback (set _vadActive=false). */
+let _vadStream = null;
+let _vadCtx = null;
+let _vadAnalyser = null;
+let _vadInterval = null;
+let _vadActive = false;
+let _vadAboveCount = 0;
+let _vadLastInterruptAt = 0;
+
+const VAD_THRESHOLD = 0.025;              // RMS — tune if needed
+const VAD_HOLD_SAMPLES = 8;               // ~160ms at 50Hz sustained activity
+const VAD_INTERRUPT_COOLDOWN_MS = 800;    // don't double-fire interrupts
+
+async function startVAD(){
+  if (_vadActive) return;
+  try {
+    _vadStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    _vadCtx = new Ctor();
+    // Some browsers start AudioContext suspended until user gesture; resume.
+    if (_vadCtx.state === "suspended") await _vadCtx.resume();
+    const source = _vadCtx.createMediaStreamSource(_vadStream);
+    _vadAnalyser = _vadCtx.createAnalyser();
+    _vadAnalyser.fftSize = 1024;
+    _vadAnalyser.smoothingTimeConstant = 0.3;
+    source.connect(_vadAnalyser);
+
+    const buf = new Float32Array(_vadAnalyser.fftSize);
+    _vadInterval = setInterval(() => {
+      _vadAnalyser.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      const rms = Math.sqrt(sum / buf.length);
+      if (rms > VAD_THRESHOLD){
+        _vadAboveCount++;
+        if (_vadAboveCount >= VAD_HOLD_SAMPLES){
+          const now = Date.now();
+          if ((_audioPlaying || _chainActive) &&
+              now - _vadLastInterruptAt > VAD_INTERRUPT_COOLDOWN_MS){
+            _vadLastInterruptAt = now;
+            console.log(`[VAD interrupt] rms=${rms.toFixed(3)}`);
+            interrupt();
+          }
+        }
+      } else {
+        _vadAboveCount = 0;
+      }
+    }, 20);
+    _vadActive = true;
+    console.log("[VAD] active");
+  } catch(e){
+    console.warn("[VAD] startup failed — falling back to onspeechstart only", e);
+    _vadActive = false;
+    await stopVAD();
+  }
+}
+
+async function stopVAD(){
+  if (_vadInterval){ clearInterval(_vadInterval); _vadInterval = null; }
+  if (_vadStream){
+    try { _vadStream.getTracks().forEach(t => t.stop()); } catch(_){}
+    _vadStream = null;
+  }
+  if (_vadCtx){
+    try { await _vadCtx.close(); } catch(_){}
+    _vadCtx = null;
+  }
+  _vadAnalyser = null;
+  _vadActive = false;
+  _vadAboveCount = 0;
+}
+
 /* PHASE C: user is speaking over the panel — stop everything immediately.
    1. Local: pause current <audio>, clear queue (browser keeps prefetching
       otherwise via the chunked /turn-audio endpoint).
@@ -694,13 +783,16 @@ function setupRecognition(){
     setSpeaking("you");
   };
 
-  /* PHASE C: if the user starts speaking while the panel is currently
-     talking (audio playing or chain mid-flight), treat it as an interrupt —
-     stop the panel within ~200ms and pivot to the user's input. The
-     subsequent onresult will fire a normal /turn with their transcript. */
+  /* PHASE C/B: speech-start interrupt. Web Speech's onspeechstart is
+     unreliable in the presence of echo bleed from laptop speakers — it
+     will fire on the panel's own audio leaking into the mic. We prefer
+     the dedicated VAD (Phase B, Web Audio RMS with a calibrated
+     threshold) for interrupts. Use this only as a fallback when VAD
+     failed to initialise. */
   r.onspeechstart = () => {
+    if (_vadActive) return;        // VAD is handling this — don't double-fire
     if (_audioPlaying || _chainActive) {
-      console.log("[interrupt] user speech detected over panel");
+      console.log("[interrupt:onspeechstart] panel active, user spoke");
       interrupt();
     }
   };
@@ -796,14 +888,17 @@ async function startMic(){
   if (!ok) return;
   wantsListening = true;
   if (!actuallyListening){ try { recognition.start(); } catch(_){} }
+  // Phase B: start the dedicated VAD in parallel for echo-resistant interrupts.
+  startVAD();   // fire-and-forget; async setup, won't block the mic start
 }
-function stopMic(){
+async function stopMic(){
   wantsListening = false;
   if (recognition && actuallyListening){ try { recognition.stop(); } catch(_){} }
+  await stopVAD();
 }
-micBtn.addEventListener("click", () => {
-  if (wantsListening) stopMic();
-  else startMic();
+micBtn.addEventListener("click", async () => {
+  if (wantsListening) await stopMic();
+  else await startMic();
 });
 
 // Mic-pause hooks — kept callable so any straggling call site doesn't crash,
