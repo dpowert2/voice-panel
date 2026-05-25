@@ -257,7 +257,15 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
 
             if who is None or who not in PERSONAS:
                 if spoke_count == 0:
-                    await _publish({"type": "silence"})
+                    # Include the per-persona urgency so the UI can show
+                    # why nobody spoke (typically: everyone rated < 4).
+                    await _publish({
+                        "type": "silence",
+                        "votes": [
+                            {"persona": c["persona"], "urgency": c["urgency"]}
+                            for c in considerations
+                        ],
+                    })
                 break
 
             persona = PERSONAS[who]

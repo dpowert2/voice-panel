@@ -194,6 +194,11 @@
   .event .flag.bad{background:rgba(239,107,107,.18);color:var(--warn2);border:1px solid rgba(239,107,107,.4);}
   .event .flag.ok{background:rgba(127,209,161,.15);color:var(--ok);border:1px solid rgba(127,209,161,.3);}
   .event.bad{border-color:rgba(239,107,107,.45);}
+  .event .text{color:var(--text);font-size:11px;line-height:1.45;margin-top:4px;opacity:.9;
+    font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;
+    word-wrap:break-word;}
+  .event .votes{color:var(--mute);font-size:10px;margin-top:4px;font-family:"SF Mono",Menlo,monospace;}
+  .event .votes b{color:var(--text);font-weight:600;}
 </style>
 </head>
 <body>
@@ -370,7 +375,13 @@ function addEvent(ev){
               <span class="flag ${ev.is_bad_actor ? "bad" : "ok"}">${ev.is_bad_actor ? "BAD ACTOR" : "OK"}</span>
             </div>`;
   } else if (ev.type === "silence"){
-    body = `<div class="row1"><span class="type">silence</span></div>`;
+    body = `<div class="row1"><span class="type">silence</span><span class="who">no one above threshold (≥4)</span></div>`;
+    if (ev.votes && ev.votes.length){
+      const tally = ev.votes
+        .map(v => `${v.persona}=<b>${v.urgency}</b>`)
+        .join(" · ");
+      body += `<div class="votes">urgencies: ${tally}</div>`;
+    }
   } else if (ev.type === "chain_end"){
     body = `<div class="row1"><span class="type">chain end</span></div>`;
   } else if (ev.type === "chain_cancelled"){
