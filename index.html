@@ -113,6 +113,39 @@
     animation:pulse 1.6s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
 
+  /* ===== health record modal ===== */
+  #record-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);
+    display:none;align-items:center;justify-content:center;z-index:100;
+    backdrop-filter:blur(6px);}
+  #record-backdrop.open{display:flex}
+  #record-modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:22px;min-width:480px;max-width:90vw;max-height:90vh;overflow-y:auto;
+    box-shadow:0 20px 60px rgba(0,0,0,.5);}
+  #record-modal h3{margin:0 0 4px;font-size:15px;font-weight:600}
+  #record-modal .sub{color:var(--mute);font-size:12px;margin-bottom:18px}
+  #record-modal label{display:block;font-size:11px;color:var(--mute);text-transform:uppercase;
+    letter-spacing:.5px;margin:12px 0 4px;font-weight:600}
+  #record-modal input, #record-modal textarea{
+    width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    padding:8px 10px;border-radius:6px;font-size:13px;outline:none;font-family:inherit;
+    resize:vertical;}
+  #record-modal input:focus, #record-modal textarea:focus{border-color:var(--vale)}
+  #record-modal textarea{min-height:60px}
+  #record-modal .row2{display:grid;grid-template-columns:1fr 80px 80px;gap:8px}
+  #record-modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
+  #record-modal .actions button{padding:9px 16px;border-radius:6px;font-weight:500;
+    cursor:pointer;font-size:13px;border:1px solid var(--line);background:var(--panel2);
+    color:var(--text);}
+  #record-modal .actions button.primary{background:var(--vale);color:#0b0d10;border-color:var(--vale);
+    font-weight:600;}
+  #record-modal .hint{color:var(--mute);font-size:11px;margin-top:14px;line-height:1.5;
+    border-top:1px solid var(--line);padding-top:12px;}
+  /* "record loaded" badge on the You tile */
+  .tile[data-key="you"] .record-badge{position:absolute;top:10px;left:10px;
+    background:rgba(0,0,0,.5);border:1px solid var(--line);border-radius:6px;
+    padding:3px 8px;font-size:10px;color:var(--mute);font-weight:600;
+    text-transform:uppercase;letter-spacing:.4px;}
+
   /* ===== right column: detection feed ===== */
   aside{background:var(--panel);border-left:1px solid var(--line);
     display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
@@ -149,9 +182,56 @@
       <button id="mic" title="Click to speak (Chrome/Safari)">🎤</button>
       <input id="msg" placeholder="Type a question, or click 🎤 to speak…" autocomplete="off" />
       <button id="send">Send</button>
+      <button id="record-btn" title="View / edit the patient health record shared with the panel">📋 Record</button>
       <button id="reset" title="Clear panel state">Reset</button>
     </div>
   </main>
+
+  <div id="record-backdrop">
+    <div id="record-modal">
+      <h3>Patient Health Record</h3>
+      <div class="sub">Shared with every panelist on every turn. Fake data for the demo.</div>
+
+      <label>Name</label>
+      <input id="r-name" type="text" />
+      <div class="row2">
+        <div>
+          <label>Sex</label>
+          <input id="r-sex" type="text" />
+        </div>
+        <div>
+          <label>Age</label>
+          <input id="r-age" type="number" />
+        </div>
+      </div>
+
+      <label>Conditions (comma-separated)</label>
+      <input id="r-conditions" type="text" />
+
+      <label>Medications (comma-separated)</label>
+      <input id="r-medications" type="text" />
+
+      <label>Allergies (comma-separated)</label>
+      <input id="r-allergies" type="text" />
+
+      <label>Family history (comma-separated)</label>
+      <input id="r-family" type="text" />
+
+      <label>Recent notes</label>
+      <textarea id="r-notes"></textarea>
+
+      <div class="actions">
+        <button id="r-cancel">Cancel</button>
+        <button id="r-save" class="primary">Save</button>
+      </div>
+
+      <div class="hint">
+        Try changing a condition (e.g. add "type 2 diabetes") and asking the
+        panel about a symptom — they'll personalise. Marcus will too, which
+        is the point: real bad actors weaponise personal data.
+      </div>
+    </div>
+  </div>
 
   <aside>
     <h2>Detection Feed</h2>
@@ -169,6 +249,8 @@ const sendBtn    = $("#send");
 const resetBtn   = $("#reset");
 const micBtn     = $("#mic");
 const connEl     = $("#conn");
+const recordBtn  = $("#record-btn");
+const recordBackdrop = $("#record-backdrop");
 
 const AVATARS = { vale: "🩺", pri: "💊", sam: "🌿", marcus: "💼", you: "🧑" };
 const ROLES   = { vale: "GP",  pri: "Pharmacist", sam: "Wellness coach", marcus: "Panelist", you: "Patient" };
@@ -334,6 +416,85 @@ sendBtn.addEventListener("click", send);
 resetBtn.addEventListener("click", reset);
 inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
 
+/* ---- patient health record ----------------------------------- */
+let _currentRecord = null;
+
+function _csv(arr){ return (arr || []).join(", "); }
+function _split(s){ return (s || "").split(",").map(x => x.trim()).filter(Boolean); }
+
+async function loadRecord(){
+  try {
+    const r = await fetch("/health_record");
+    _currentRecord = await r.json();
+    renderRecordBadge();
+  } catch(e){ console.warn("loadRecord failed", e); }
+}
+
+function renderRecordBadge(){
+  const you = document.getElementById("tile-you");
+  if (!you || !_currentRecord) return;
+  let badge = you.querySelector(".record-badge");
+  if (!badge){
+    badge = document.createElement("div");
+    badge.className = "record-badge";
+    you.appendChild(badge);
+  }
+  const r = _currentRecord;
+  // tiny summary: "📋 38M · asthma, htn"
+  const conds = (r.conditions || []).map(c => c.split(/\s|\(/)[0]).slice(0,2).join(", ");
+  badge.textContent = `📋 ${r.age || "?"}${r.sex || ""} · ${conds || "no conditions"}`;
+}
+
+function openRecordModal(){
+  const r = _currentRecord || {};
+  $("#r-name").value = r.name || "";
+  $("#r-sex").value = r.sex || "";
+  $("#r-age").value = r.age || "";
+  $("#r-conditions").value = _csv(r.conditions);
+  $("#r-medications").value = _csv(r.medications);
+  $("#r-allergies").value = _csv(r.allergies);
+  $("#r-family").value = _csv(r.family_history);
+  $("#r-notes").value = r.recent_notes || "";
+  recordBackdrop.classList.add("open");
+}
+
+function closeRecordModal(){
+  recordBackdrop.classList.remove("open");
+}
+
+async function saveRecord(){
+  const body = {
+    name: $("#r-name").value.trim(),
+    sex: $("#r-sex").value.trim(),
+    age: parseInt($("#r-age").value, 10) || null,
+    conditions: _split($("#r-conditions").value),
+    medications: _split($("#r-medications").value),
+    allergies: _split($("#r-allergies").value),
+    family_history: _split($("#r-family").value),
+    recent_notes: $("#r-notes").value.trim(),
+  };
+  try {
+    const r = await fetch("/health_record", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body),
+    });
+    _currentRecord = await r.json();
+    renderRecordBadge();
+    closeRecordModal();
+  } catch(e){ alert("Save failed: " + e); }
+}
+
+recordBtn.addEventListener("click", openRecordModal);
+$("#r-cancel").addEventListener("click", closeRecordModal);
+$("#r-save").addEventListener("click", saveRecord);
+recordBackdrop.addEventListener("click", (e) => {
+  if (e.target === recordBackdrop) closeRecordModal();   // click outside modal to dismiss
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && recordBackdrop.classList.contains("open")) closeRecordModal();
+});
+
 /* ---- always-on voice input ----------------------------------- */
 let recognition = null;
 let wantsListening = false;
@@ -494,6 +655,7 @@ window.__resumeMicAfterAudio = () => {
 
 (async () => {
   await loadPersonas();
+  await loadRecord();   // fetch + render the patient record badge
   openEventStream();
   inputEl.focus();
 })();

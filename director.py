@@ -32,6 +32,7 @@ import urllib.error
 import urllib.request
 
 from personas import PERSONAS
+from health_record import format_for_prompt as record_for_prompt
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 CONSIDER_MODEL = "claude-haiku-4-5-20251001"  # cheap + fast per-persona evaluator
@@ -70,6 +71,7 @@ def _consider_prompt(persona) -> str:
         f"You are {persona.name} on a live voice panel, alongside "
         f"{', '.join(others)} and one human (the patient).\n\n"
         f"Your role here:\n{persona.system_prompt}\n\n"
+        f"{record_for_prompt()}\n"
         "Decide if NOW is your moment to speak. Rate URGENCY 0-10:\n"
         "  0-3: stay silent — not your moment.\n"
         "  4-6: you have something worth adding.\n"

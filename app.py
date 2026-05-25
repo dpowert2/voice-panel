@@ -36,6 +36,7 @@ load_dotenv(override=True)  # shell may pre-set blank ANTHROPIC_API_KEY
 
 from director import detect_direct_address, orchestrate  # noqa: E402
 from personas import PERSONAS  # noqa: E402
+from health_record import get_record, set_record, format_for_prompt as record_for_prompt  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("voice-panel")
@@ -69,10 +70,12 @@ _chain_task: asyncio.Task | None = None
 # ---------------------------------------------------------------------------
 
 async def _claude_reply(persona, transcript_context: str) -> str:
+    # Prepend the patient's health record so each persona can personalise.
+    system = persona.system_prompt + "\n\n" + record_for_prompt()
     body = {
         "model": ANTHROPIC_MODEL,
         "max_tokens": 110,  # ~2 sentences. Brevity is felt as energy in a demo.
-        "system": persona.system_prompt,
+        "system": system,
         "messages": [{"role": "user", "content": transcript_context}],
     }
     async with _http.post(ANTHROPIC_URL, headers=ANTHROPIC_HEADERS, json=body) as r:
@@ -331,6 +334,21 @@ async def handle_personas(request: web.Request) -> web.Response:
     )
 
 
+async def handle_get_record(request: web.Request) -> web.Response:
+    return web.json_response(get_record())
+
+
+async def handle_set_record(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid json"}, status=400)
+    merged = set_record(body)
+    log.info("health record updated: name=%s, conditions=%s",
+             merged.get("name"), merged.get("conditions"))
+    return web.json_response(merged)
+
+
 async def handle_reset(request: web.Request) -> web.Response:
     global _chain_task
     if _chain_task and not _chain_task.done():
@@ -381,6 +399,8 @@ def make_app() -> web.Application:
     app.router.add_post("/reset", handle_reset)
     app.router.add_get("/events", handle_events)
     app.router.add_get("/avatar/{key}", handle_avatar)
+    app.router.add_get("/health_record", handle_get_record)
+    app.router.add_post("/health_record", handle_set_record)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     return app
