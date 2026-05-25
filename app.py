@@ -818,6 +818,67 @@ async def handle_set_record(request: web.Request) -> web.Response:
     return web.json_response(merged)
 
 
+async def handle_stt(request: web.Request) -> web.Response:
+    """Accept a recorded audio blob, transcribe via ElevenLabs Scribe.
+
+    Frontend uses MediaRecorder on the VAD's mic stream. On each detected
+    end-of-utterance, the blob is POSTed here. We forward to ElevenLabs
+    /v1/speech-to-text (Scribe v1) and return the text. Then the frontend
+    POSTs that text to /turn as a normal utterance.
+
+    Pipeline: client mic → MediaRecorder → /stt → Scribe → text → /turn
+    """
+    try:
+        reader = await request.multipart()
+    except Exception as e:
+        return web.json_response({"error": f"bad multipart: {e}"}, status=400)
+    field = await reader.next()
+    if field is None or field.name != "audio":
+        return web.json_response({"error": "missing 'audio' field"}, status=400)
+
+    # Read the whole blob into memory (utterances are short; ~50-200 KB).
+    audio_bytes = await field.read()
+    filename = field.filename or "utterance.webm"
+    content_type = field.headers.get("Content-Type") or "audio/webm"
+
+    if len(audio_bytes) < 1000:
+        # Too small to be a real utterance — likely a stray VAD trigger.
+        return web.json_response({"text": "", "skipped": "too short"})
+
+    # Forward to ElevenLabs Scribe.
+    form = aiohttp.FormData()
+    form.add_field("file", audio_bytes, filename=filename, content_type=content_type)
+    form.add_field("model_id", "scribe_v1")
+    # Optional: tag the language so Scribe doesn't auto-detect (faster).
+    form.add_field("language_code", "eng")
+
+    url = "https://api.elevenlabs.io/v1/speech-to-text"
+    headers = {"xi-api-key": ELEVEN_API_KEY}
+
+    try:
+        async with _http.post(
+            url, data=form, headers=headers,
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as r:
+            body = await r.text()
+            if r.status != 200:
+                log.warning("Scribe STT %d: %s", r.status, body[:500])
+                return web.json_response(
+                    {"error": "stt failed", "status": r.status, "details": body[:500]},
+                    status=502,
+                )
+            result = json.loads(body)
+    except asyncio.TimeoutError:
+        return web.json_response({"error": "stt timeout"}, status=504)
+    except Exception as e:
+        log.exception("STT call failed")
+        return web.json_response({"error": str(e)}, status=500)
+
+    text = (result.get("text") or "").strip()
+    log.info("scribe → %r", text[:120])
+    return web.json_response({"text": text})
+
+
 async def handle_interrupt(request: web.Request) -> web.Response:
     """Cancel the current chain task. Called by the frontend the moment it
     detects the user starting to speak over the panel. Streams die quickly
@@ -924,6 +985,7 @@ def make_app() -> web.Application:
     app.router.add_post("/health_record", handle_set_record)
     app.router.add_post("/personas/{key}/enabled", handle_persona_enabled)
     app.router.add_post("/interrupt", handle_interrupt)
+    app.router.add_post("/stt", handle_stt)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     return app

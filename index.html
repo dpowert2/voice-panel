@@ -567,11 +567,21 @@ let _vadAnalyser = null;
 let _vadInterval = null;
 let _vadActive = false;
 let _vadAboveCount = 0;
+let _vadBelowCount = 0;
+let _vadSpeaking = false;          // true between detected speech-start and speech-end
 let _vadLastInterruptAt = 0;
 
-const VAD_THRESHOLD = 0.025;              // RMS — tune if needed
-const VAD_HOLD_SAMPLES = 8;               // ~160ms at 50Hz sustained activity
-const VAD_INTERRUPT_COOLDOWN_MS = 800;    // don't double-fire interrupts
+const VAD_THRESHOLD = 0.025;               // RMS — tune if needed
+const VAD_HOLD_SAMPLES = 8;                // ~160ms at 50Hz sustained activity to START
+const VAD_SILENCE_FRAMES_TO_END = 35;      // ~700ms silence to END an utterance
+const VAD_INTERRUPT_COOLDOWN_MS = 800;     // don't double-fire interrupts
+
+/* Phase E-lite: VAD-driven recording. MediaRecorder runs on _vadStream
+   between speech-start and speech-end events. The resulting blob is
+   posted to /stt (ElevenLabs Scribe) and the returned text fires send(). */
+let _mediaRecorder = null;
+let _recordingChunks = [];
+let _sttInFlight = false;
 
 async function startVAD(){
   if (_vadActive) return;
@@ -601,17 +611,23 @@ async function startVAD(){
       const rms = Math.sqrt(sum / buf.length);
       if (rms > VAD_THRESHOLD){
         _vadAboveCount++;
-        if (_vadAboveCount >= VAD_HOLD_SAMPLES){
-          const now = Date.now();
-          if ((_audioPlaying || _chainActive) &&
-              now - _vadLastInterruptAt > VAD_INTERRUPT_COOLDOWN_MS){
-            _vadLastInterruptAt = now;
-            console.log(`[VAD interrupt] rms=${rms.toFixed(3)}`);
-            interrupt();
-          }
+        _vadBelowCount = 0;
+        // Speech START transition: sustained activity for HOLD_SAMPLES.
+        if (!_vadSpeaking && _vadAboveCount >= VAD_HOLD_SAMPLES){
+          _vadSpeaking = true;
+          _onVadSpeechStart(rms);
         }
       } else {
         _vadAboveCount = 0;
+        if (_vadSpeaking){
+          _vadBelowCount++;
+          // Speech END transition: sustained silence for SILENCE_TO_END.
+          if (_vadBelowCount >= VAD_SILENCE_FRAMES_TO_END){
+            _vadSpeaking = false;
+            _vadBelowCount = 0;
+            _onVadSpeechEnd();
+          }
+        }
       }
     }, 20);
     _vadActive = true;
@@ -625,6 +641,7 @@ async function startVAD(){
 
 async function stopVAD(){
   if (_vadInterval){ clearInterval(_vadInterval); _vadInterval = null; }
+  _stopRecording();   // make sure we don't leak a recorder
   if (_vadStream){
     try { _vadStream.getTracks().forEach(t => t.stop()); } catch(_){}
     _vadStream = null;
@@ -636,6 +653,101 @@ async function stopVAD(){
   _vadAnalyser = null;
   _vadActive = false;
   _vadAboveCount = 0;
+  _vadBelowCount = 0;
+  _vadSpeaking = false;
+}
+
+/* VAD → speech START. If the panel is currently speaking, interrupt it
+   first. Then begin recording the user's utterance. */
+function _onVadSpeechStart(rms){
+  const now = Date.now();
+  if ((_audioPlaying || _chainActive) &&
+      now - _vadLastInterruptAt > VAD_INTERRUPT_COOLDOWN_MS){
+    _vadLastInterruptAt = now;
+    console.log(`[VAD interrupt+record] rms=${rms.toFixed(3)}`);
+    interrupt();
+  } else {
+    console.log(`[VAD record] rms=${rms.toFixed(3)}`);
+  }
+  _startRecording();
+  inputEl.placeholder = "Recording…";
+}
+
+/* VAD → speech END. Stop the recorder; its onstop handler will package
+   the blob and send it for transcription. */
+function _onVadSpeechEnd(){
+  console.log("[VAD] speech end → finalising recording");
+  _stopRecording();
+  inputEl.placeholder = "Transcribing…";
+}
+
+function _startRecording(){
+  if (!_vadStream) return;
+  if (_mediaRecorder && _mediaRecorder.state !== "inactive") return;  // already recording
+  _recordingChunks = [];
+  let mimeType = "audio/webm;codecs=opus";
+  if (!MediaRecorder.isTypeSupported(mimeType)){
+    mimeType = "audio/webm";
+    if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "";  // browser default
+  }
+  try {
+    _mediaRecorder = mimeType
+      ? new MediaRecorder(_vadStream, { mimeType })
+      : new MediaRecorder(_vadStream);
+  } catch(e){
+    console.warn("MediaRecorder init failed", e);
+    return;
+  }
+  _mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) _recordingChunks.push(e.data);
+  };
+  _mediaRecorder.onstop = async () => {
+    const blob = new Blob(_recordingChunks, { type: _mediaRecorder.mimeType || "audio/webm" });
+    _recordingChunks = [];
+    if (blob.size < 1500){
+      // too-short utterance, probably background noise — drop silently
+      console.log("[STT] utterance too short, skipping", blob.size, "bytes");
+      inputEl.placeholder = "Type a question, or click 🎤 to speak…";
+      return;
+    }
+    await _transcribeAndSend(blob);
+  };
+  _mediaRecorder.start();
+}
+
+function _stopRecording(){
+  if (_mediaRecorder && _mediaRecorder.state === "recording"){
+    try { _mediaRecorder.stop(); } catch(_){}
+  }
+}
+
+async function _transcribeAndSend(blob){
+  if (_sttInFlight){
+    console.warn("[STT] already in flight, dropping");
+    return;
+  }
+  _sttInFlight = true;
+  try {
+    const form = new FormData();
+    form.append("audio", blob, "utterance.webm");
+    const t0 = performance.now();
+    const r = await fetch("/stt", { method: "POST", body: form });
+    const data = await r.json();
+    const dt = (performance.now() - t0).toFixed(0);
+    const text = (data.text || "").trim();
+    console.log(`[STT] ${dt}ms → ${JSON.stringify(text)}`);
+    if (!text){
+      inputEl.placeholder = "Type a question, or click 🎤 to speak…";
+      return;
+    }
+    inputEl.value = text;
+    send();   // POST /turn — kicks off the panel
+  } catch(e){
+    console.warn("[STT] failed", e);
+    inputEl.placeholder = "Transcription failed — try again";
+  } finally {
+    _sttInFlight = false;
+  }
 }
 
 /* PHASE C: user is speaking over the panel — stop everything immediately.
@@ -936,17 +1048,17 @@ function setupRecognition(){
       else interim += res[0].transcript;
     }
     if (interim || final) consecutiveQuickEnds = 0;  // we're getting audio
-    // PHASE B+: while the panel is talking, Web Speech often transcribes
-    // the panel's own audio bleeding through speakers. Discard those —
-    // they are NOT real user input. Interruption (VAD) handles the
-    // "user wants to speak now" path by stopping the panel first, which
-    // clears _audioPlaying/_chainActive and re-opens this gate.
+    // Phase E-lite: when VAD is active, IT is the source of truth for
+    // transcription (via MediaRecorder + ElevenLabs Scribe). Web Speech's
+    // onresult here is purely advisory — never fires send(), never
+    // overwrites the input. Falls through to legacy behaviour only if
+    // VAD failed to start (e.g. permission denied for the 2nd stream).
+    if (_vadActive){
+      return;
+    }
+    // ---- LEGACY (VAD unavailable): gate against panel echo, then send ----
     if (_audioPlaying || _chainActive){
-      if (interim || final){
-        console.log("[mic gate] panel active — ignoring transcript:",
-                    (final || interim).trim().slice(0, 120));
-      }
-      inputEl.value = "";    // don't even show in the input box
+      inputEl.value = "";
       return;
     }
     if (interim) inputEl.value = interim.trim();
