@@ -105,11 +105,23 @@ _chain_task: asyncio.Task | None = None
 async def _claude_reply(persona, transcript_context: str) -> str:
     # Prepend the patient's health record so each persona can personalise.
     system = persona.system_prompt + "\n\n" + record_for_prompt()
+    # Wrap the transcript in a clear frame so the LLM doesn't treat it as a
+    # script to continue (which causes impersonation of other panelists).
+    user_msg = (
+        f"Here is the panel discussion so far. You are {persona.name} — "
+        f"the other names belong to OTHER panelists, not you. Do not "
+        f"continue their lines, do not speak for them.\n\n"
+        f"--- TRANSCRIPT START ---\n"
+        f"{transcript_context}\n"
+        f"--- TRANSCRIPT END ---\n\n"
+        f"Now reply as {persona.name}, in one or two short spoken "
+        f"sentences. Reply with your words only — no name prefix."
+    )
     body = {
         "model": ANTHROPIC_MODEL,
         "max_tokens": 110,  # ~2 sentences. Brevity is felt as energy in a demo.
         "system": system,
-        "messages": [{"role": "user", "content": transcript_context}],
+        "messages": [{"role": "user", "content": user_msg}],
     }
     async with _http.post(ANTHROPIC_URL, headers=ANTHROPIC_HEADERS, json=body) as r:
         r.raise_for_status()
