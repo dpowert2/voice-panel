@@ -200,6 +200,9 @@
   .event .votes{color:var(--mute);font-size:10px;margin-top:4px;font-family:"SF Mono",Menlo,monospace;}
   .event .votes b{color:var(--text);font-weight:600;}
 
+  /* ===== push-to-talk bar (mobile only) ===== */
+  #ptt-bar{display:none;}
+
   /* ===== mobile detection-feed toggle & close ===== */
   #feed-close{display:none;}
   #feed-toggle{display:none;background:var(--panel);border-top:1px solid var(--line);
@@ -247,14 +250,29 @@
     .tile .eq{height:11px;gap:1.5px;}
     .tile[data-key="you"] .record-badge{font-size:8px;padding:2px 5px;top:6px;left:6px;}
 
-    #controls{flex-wrap:wrap;gap:6px;padding:8px 10px 10px;}
-    #controls input{flex:1 1 auto;min-width:0;padding:10px;font-size:16px;border-radius:6px;}
-    #controls button{padding:10px 12px;font-size:14px;border-radius:6px;min-height:42px;}
-    #controls button#mic{font-size:16px;min-width:44px;order:0;}
-    #controls input#msg{order:1;}
-    #controls button#send{padding:10px 16px;order:2;}
-    #controls button#record-btn{font-size:12px;padding:10px;order:3;flex:1;}
-    #controls button#reset{order:4;flex:1;}
+    #controls{display:none;}
+
+    #ptt-bar{display:flex;flex-direction:column;gap:8px;padding:8px 10px;
+      border-top:1px solid var(--line);background:var(--bg);flex-shrink:0;}
+    #ptt-utils{display:flex;gap:6px;align-items:center;}
+    #ptt-utils input{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--text);
+      padding:8px 10px;border-radius:8px;font-size:14px;outline:none;min-width:0;}
+    #ptt-utils input:focus{border-color:var(--vale);}
+    #ptt-utils button{background:var(--panel);color:var(--text);border:1px solid var(--line);
+      padding:8px 12px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;
+      white-space:nowrap;}
+    #ptt-utils #send-mobile{background:var(--vale);color:#0b0d10;border-color:var(--vale);font-weight:600;}
+
+    #ptt{display:flex;align-items:center;justify-content:center;gap:10px;
+      width:100%;padding:18px;border-radius:14px;border:2px solid var(--line);
+      background:var(--panel);color:var(--text);font-size:18px;font-weight:600;
+      cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;
+      touch-action:none;transition:background .15s ease,border-color .15s ease,transform .1s ease;}
+    #ptt:active,#ptt.recording{background:var(--warn);color:#fff;border-color:var(--warn);
+      transform:scale(0.97);}
+    #ptt.recording{animation:micpulse 1.2s ease-in-out infinite;}
+    #ptt-icon{font-size:24px;line-height:1;}
+    #ptt-label{font-size:16px;}
 
     #record-modal{min-width:unset;width:100%;height:100%;max-height:100vh;
       border-radius:0;padding:16px;}
@@ -296,6 +314,18 @@
       <button id="send">Send</button>
       <button id="record-btn" title="View / edit the patient health record shared with the panel">📋 Record</button>
       <button id="reset" title="Clear panel state">Reset</button>
+    </div>
+    <div id="ptt-bar">
+      <div id="ptt-utils">
+        <input id="msg-mobile" placeholder="Or type here…" autocomplete="off" />
+        <button id="send-mobile">Send</button>
+        <button id="record-btn-mobile" title="Health record">📋</button>
+        <button id="reset-mobile" title="Reset">↺</button>
+      </div>
+      <button id="ptt">
+        <span id="ptt-icon">🎤</span>
+        <span id="ptt-label">Hold to talk</span>
+      </button>
     </div>
     <div id="feed-toggle">Detection Feed <span id="feed-count" class="count"></span></div>
   </main>
@@ -1229,6 +1259,7 @@ async function ensureMicPermission(){
 }
 
 async function startMic(){
+  if (_isMobile) return;
   clearMicError();
   consecutiveQuickEnds = 0;
   _unlockAudio();
@@ -1238,9 +1269,7 @@ async function startMic(){
   if (!ok) return;
   wantsListening = true;
   if (!actuallyListening){ try { recognition.start(); } catch(_){} }
-  if (!_isMobile){
-    startVAD();
-  }
+  startVAD();
 }
 async function stopMic(){
   wantsListening = false;
@@ -1258,6 +1287,126 @@ micBtn.addEventListener("click", async () => {
 // targeted pausing if echo proves intractable.
 window.__pauseMicForAudio = () => {};
 window.__resumeMicAfterAudio = () => {};
+
+/* ---- mobile push-to-talk ------------------------------------ */
+const pttBtn       = $("#ptt");
+const pttLabel     = $("#ptt-label");
+const msgMobile    = $("#msg-mobile");
+const sendMobileBtn= $("#send-mobile");
+const recordMobileBtn = $("#record-btn-mobile");
+const resetMobileBtn  = $("#reset-mobile");
+
+let _pttStream = null;
+let _pttRecorder = null;
+let _pttChunks = [];
+let _pttActive = false;
+
+async function _ensurePttStream(){
+  if (_pttStream) return _pttStream;
+  _pttStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  return _pttStream;
+}
+
+async function pttStart(){
+  if (_pttActive) return;
+  _pttActive = true;
+  _unlockAudio();
+  if (_audioPlaying || _chainActive) interrupt();
+  pttBtn.classList.add("recording");
+  pttLabel.textContent = "Listening…";
+  setSpeaking("you");
+  try {
+    const stream = await _ensurePttStream();
+    _pttChunks = [];
+    let mimeType = "audio/webm;codecs=opus";
+    if (typeof MediaRecorder !== "undefined" && !MediaRecorder.isTypeSupported(mimeType)){
+      mimeType = "audio/webm";
+      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "";
+    }
+    _pttRecorder = mimeType
+      ? new MediaRecorder(stream, { mimeType })
+      : new MediaRecorder(stream);
+    _pttRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) _pttChunks.push(e.data);
+    };
+    _pttRecorder.start();
+  } catch(e){
+    console.warn("[PTT] mic access failed", e);
+    pttLabel.textContent = "Mic error — tap to retry";
+    pttBtn.classList.remove("recording");
+    _pttActive = false;
+    setSpeaking(null);
+  }
+}
+
+async function pttEnd(){
+  if (!_pttActive) return;
+  _pttActive = false;
+  pttBtn.classList.remove("recording");
+  pttLabel.textContent = "Transcribing…";
+  setSpeaking(null);
+  if (!_pttRecorder || _pttRecorder.state !== "recording"){
+    pttLabel.textContent = "Hold to talk";
+    return;
+  }
+  _pttRecorder.onstop = async () => {
+    const blob = new Blob(_pttChunks, { type: _pttRecorder.mimeType || "audio/webm" });
+    _pttChunks = [];
+    if (blob.size < 1500){
+      pttLabel.textContent = "Too short — hold longer";
+      setTimeout(() => { pttLabel.textContent = "Hold to talk"; }, 1500);
+      return;
+    }
+    try {
+      const form = new FormData();
+      form.append("audio", blob, "utterance.webm");
+      const r = await fetch("/stt", { method: "POST", body: form });
+      const data = await r.json();
+      const text = (data.text || "").trim();
+      if (!text){
+        pttLabel.textContent = "Didn't catch that — try again";
+        setTimeout(() => { pttLabel.textContent = "Hold to talk"; }, 1500);
+        return;
+      }
+      msgMobile.value = text;
+      sendMobile();
+    } catch(e){
+      console.warn("[PTT] transcription failed", e);
+      pttLabel.textContent = "Error — try again";
+      setTimeout(() => { pttLabel.textContent = "Hold to talk"; }, 1500);
+    }
+  };
+  try { _pttRecorder.stop(); } catch(_){}
+}
+
+function sendMobile(){
+  const text = (msgMobile.value || "").trim();
+  if (!text) return;
+  msgMobile.value = "";
+  _unlockAudio();
+  fetch("/turn", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ text }),
+  }).then(() => {
+    pttLabel.textContent = "Hold to talk";
+  });
+}
+
+if (pttBtn){
+  pttBtn.addEventListener("touchstart", (e) => { e.preventDefault(); pttStart(); }, { passive: false });
+  pttBtn.addEventListener("touchend", (e) => { e.preventDefault(); pttEnd(); }, { passive: false });
+  pttBtn.addEventListener("touchcancel", (e) => { pttEnd(); });
+  pttBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+  pttBtn.addEventListener("mousedown", (e) => { if (!_isMobile) pttStart(); });
+  pttBtn.addEventListener("mouseup", (e) => { if (!_isMobile) pttEnd(); });
+}
+if (sendMobileBtn) sendMobileBtn.addEventListener("click", sendMobile);
+if (msgMobile) msgMobile.addEventListener("keydown", (e) => { if (e.key === "Enter") sendMobile(); });
+if (recordMobileBtn) recordMobileBtn.addEventListener("click", openRecordModal);
+if (resetMobileBtn) resetMobileBtn.addEventListener("click", reset);
 
 async function loadVersion(){
   try {
