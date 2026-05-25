@@ -46,8 +46,8 @@ _JSON_RE = re.compile(r"\{.*?\}", re.DOTALL)
 # doesn't false-positive). Persona key must be followed by punctuation.
 _DIRECT_ADDRESS_RE = re.compile(
     r"^\s*(?:hey,?\s+|hi,?\s+|yo,?\s+|ok(?:ay)?,?\s+|so,?\s+|alright,?\s+)*"
-    r"(?:dr\.?\s+|doctor\s+)?"
-    r"(vale|pri|sam|marcus)"
+    r"(?:dr\.?\s+|doctor\s+|counsel(?:lor)?\s+)?"
+    r"(vale|pri|sam|marcus|reed)"
     r"\s*[,:.\-—!?]",
     re.IGNORECASE,
 )
@@ -88,7 +88,12 @@ def _consider_prompt(persona) -> str:
         "- Vale / Pri: spike when Marcus is selling, when dangerous claims "
         "appear, or when the human needs clinical / pharmaceutical guidance.\n"
         "- Sam: spike on lifestyle / stress / recovery cues, but defer to "
-        "clinicians on medical questions.\n\n"
+        "clinicians on medical questions.\n"
+        "- Reed (attorney): spike 9-10 on FTC deceptive practices, fake "
+        "scarcity, FDA disease claims for supplements, weaponisation of "
+        "the patient record, or unauthorised practice of medicine. Stay "
+        "0-2 on pure clinical discussion — let the clinicians lead. Cite "
+        "the specific statute when you speak.\n\n"
         'Reply ONLY with JSON: {"urgency": 0-10, "reason": "<5 words>"}'
     )
 

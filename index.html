@@ -14,6 +14,7 @@
     --pri:#ffc8b0;    --pri-bg:#2e2520;
     --sam:#a7e0b8;    --sam-bg:#1d2a23;
     --marcus:#d9b3ff; --marcus-bg:#28203a;
+    --reed:#f5d272;   --reed-bg:#2a2418;
     --you:#e6e9ed;    --you-bg:#1a1f26;
   }
   *{box-sizing:border-box}
@@ -31,7 +32,11 @@
   header .sub{color:var(--mute);font-size:12px;display:flex;align-items:center;gap:6px}
 
   #stage{flex:1;display:grid;grid-template-rows:1fr auto;gap:14px;padding:14px;min-height:0;}
-  #panel-grid{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);
+  /* auto-fit grid: 4 panelists → 2x2; 5 panelists → 3 cols (one empty cell ok);
+     narrows down gracefully on smaller widths. */
+  #panel-grid{display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    grid-auto-rows:minmax(0,1fr);
     gap:14px;min-height:0;}
   #you-row{display:grid;grid-template-columns:1fr;gap:14px;min-height:140px;}
 
@@ -43,6 +48,7 @@
   .tile[data-key="pri"]    {background:linear-gradient(135deg,var(--pri-bg)  0%, var(--panel) 100%);}
   .tile[data-key="sam"]    {background:linear-gradient(135deg,var(--sam-bg)  0%, var(--panel) 100%);}
   .tile[data-key="marcus"] {background:linear-gradient(135deg,var(--marcus-bg) 0%, var(--panel) 100%);}
+  .tile[data-key="reed"]   {background:linear-gradient(135deg,var(--reed-bg) 0%, var(--panel) 100%);}
   .tile[data-key="you"]    {background:linear-gradient(135deg,var(--you-bg) 0%, var(--panel) 100%);}
 
   .tile .avatar{display:flex;align-items:center;justify-content:center;
@@ -57,6 +63,7 @@
   .tile.speaking[data-key="pri"]    .avatar{border-color:var(--pri);}
   .tile.speaking[data-key="sam"]    .avatar{border-color:var(--sam);}
   .tile.speaking[data-key="marcus"] .avatar{border-color:var(--marcus);}
+  .tile.speaking[data-key="reed"]   .avatar{border-color:var(--reed);}
   .tile.speaking[data-key="you"]    .avatar{border-color:var(--warn);}
   .tile .nameplate{position:absolute;left:12px;bottom:10px;display:flex;align-items:center;gap:8px;
     background:rgba(0,0,0,.42);backdrop-filter:blur(8px);padding:5px 10px;border-radius:8px;
@@ -72,6 +79,7 @@
   .tile.speaking[data-key="pri"]    {border-color:var(--pri);    box-shadow:0 0 0 4px rgba(255,200,176,.18), 0 12px 40px rgba(255,200,176,.18);}
   .tile.speaking[data-key="sam"]    {border-color:var(--sam);    box-shadow:0 0 0 4px rgba(167,224,184,.18), 0 12px 40px rgba(167,224,184,.18);}
   .tile.speaking[data-key="marcus"] {border-color:var(--marcus); box-shadow:0 0 0 4px rgba(217,179,255,.18), 0 12px 40px rgba(217,179,255,.18);}
+  .tile.speaking[data-key="reed"]   {border-color:var(--reed);   box-shadow:0 0 0 4px rgba(245,210,114,.18), 0 12px 40px rgba(245,210,114,.18);}
   .tile.speaking[data-key="you"]    {border-color:var(--warn);   box-shadow:0 0 0 4px rgba(239,107,107,.18), 0 12px 40px rgba(239,107,107,.18);}
 
   /* equalizer in the nameplate when speaking */
@@ -88,6 +96,7 @@
   .tile[data-key="pri"]    .eq{color:var(--pri)}
   .tile[data-key="sam"]    .eq{color:var(--sam)}
   .tile[data-key="marcus"] .eq{color:var(--marcus)}
+  .tile[data-key="reed"]   .eq{color:var(--reed)}
   .tile[data-key="you"]    .eq{color:var(--warn)}
 
   /* ===== bottom controls bar ===== */
@@ -252,8 +261,8 @@ const connEl     = $("#conn");
 const recordBtn  = $("#record-btn");
 const recordBackdrop = $("#record-backdrop");
 
-const AVATARS = { vale: "🩺", pri: "💊", sam: "🌿", marcus: "💼", you: "🧑" };
-const ROLES   = { vale: "GP",  pri: "Pharmacist", sam: "Wellness coach", marcus: "Panelist", you: "Patient" };
+const AVATARS = { vale: "🩺", pri: "💊", sam: "🌿", marcus: "💼", reed: "⚖️", you: "🧑" };
+const ROLES   = { vale: "GP",  pri: "Pharmacist", sam: "Wellness coach", marcus: "Panelist", reed: "Attorney", you: "Patient" };
 
 let PERSONAS = {};
 
