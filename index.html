@@ -367,13 +367,18 @@ function addEvent(ev){
   div.className = "event" + (ev.is_bad_actor ? " bad" : "");
   let body = "";
   if (ev.type === "human"){
-    body = `<div class="row1"><span class="type">human</span><span class="who">user</span></div>`;
+    const addr = ev.directly_addressed
+      ? ` <span class="flag ok">→ ${ev.directly_addressed}</span>`
+      : "";
+    body = `<div class="row1"><span class="type">human</span><span class="who">user</span>${addr}</div>
+            <div class="text"></div>`;
   } else if (ev.type === "turn"){
     body = `<div class="row1">
               <span class="type">turn</span>
               <span class="who">${ev.speaker}</span>
               <span class="flag ${ev.is_bad_actor ? "bad" : "ok"}">${ev.is_bad_actor ? "BAD ACTOR" : "OK"}</span>
-            </div>`;
+            </div>
+            <div class="text"></div>`;
   } else if (ev.type === "silence"){
     body = `<div class="row1"><span class="type">silence</span><span class="who">no one above threshold (≥4)</span></div>`;
     if (ev.votes && ev.votes.length){
@@ -392,6 +397,11 @@ function addEvent(ev){
     body = `<div class="row1"><span class="type">${ev.type||"event"}</span></div>`;
   }
   div.innerHTML = body;
+  // Populate the text body (safe via textContent, no XSS) when present.
+  if (ev.text){
+    const t = div.querySelector(".text");
+    if (t) t.textContent = ev.text;
+  }
   eventsEl.appendChild(div);
   eventsEl.scrollTop = eventsEl.scrollHeight;
 }

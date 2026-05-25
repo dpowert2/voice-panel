@@ -41,17 +41,26 @@ CONSIDER_MODEL = "claude-haiku-4-5-20251001"  # cheap + fast per-persona evaluat
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.MULTILINE)
 _JSON_RE = re.compile(r"\{.*?\}", re.DOTALL)
 
-# Direct-address detection: "Vale,", "Dr Vale,", "Hey Marcus —", "OK Pri:".
-# Matches at the start of the utterance only (so "I told Vale earlier"
-# doesn't false-positive). Persona key must be followed by punctuation.
-_DIRECT_ADDRESS_RE = re.compile(
-    r"^\s*(?:hey,?\s+|hi,?\s+|yo,?\s+|ok(?:ay)?,?\s+|so,?\s+|alright,?\s+)*"
-    r"(?:dr\.?\s+|doctor\s+|counsel(?:lor)?\s+)?"
-    r"(vale|pri|sam|marcus|reed)"
-    r"\s*[,:.\-—!?]",
+_PERSONA_KEYS = set(PERSONAS.keys())
+
+# Words we'll skip past when looking for the addressed persona's name —
+# conversation openers, titles, politeness fillers. Web Speech rarely
+# transcribes vocative commas, so we can't rely on punctuation.
+_OPENERS_AND_TITLES_RE = re.compile(
+    r"^\s*(?:"
+    r"hey|hi|yo|ok|okay|so|alright|well|and|but|look|listen|please|"
+    r"there|um|uh|yeah|yes|right|"
+    r"dr\.?|doctor|counsel(?:lor|or)?|mr\.?|mrs\.?|ms\.?"
+    r")(?:[\s,]+|$)",
     re.IGNORECASE,
 )
-_PERSONA_KEYS = set(PERSONAS.keys())
+# If the name is followed by a stative/reporting verb, the user is talking
+# ABOUT the persona, not TO them ("Marcus is annoying", "Vale said earlier").
+_STATIVE_VERBS = {
+    "is", "isn't", "was", "wasn't", "are", "aren't", "were", "weren't",
+    "has", "have", "had", "seems", "looks", "sounds", "feels", "appears",
+    "thinks", "said", "told", "mentioned", "claimed", "argued", "got",
+}
 
 
 # --------------------------------------------------------------------------
@@ -122,14 +131,41 @@ def get_enabled_map() -> dict[str, bool]:
 
 
 def detect_direct_address(text: str) -> str | None:
-    """Return persona key if the utterance opens with a direct address."""
+    """Find a persona name addressed at the start of the utterance.
+
+    Permissive: handles unpunctuated speech-to-text, multi-word openers,
+    titles. Returns the persona key (lowercase) or None.
+
+    Triggers:              Does NOT trigger:
+      'Vale, hi'             'I told Vale earlier'
+      'vale what?'           'What does Vale think?'
+      'Hey Vale'             'and we asked Vale'
+      'Dr Vale, how?'        'Marcus is annoying'
+      'Hey there Vale'
+      'OK so Marcus'
+      'Please Pri'
+    """
     if not text:
         return None
-    m = _DIRECT_ADDRESS_RE.match(text)
-    if not m:
-        return None
-    name = m.group(1).lower()
-    return name if name in _PERSONA_KEYS else None
+    work = text.strip()
+    # Strip leading openers / titles, up to a few in a row.
+    for _ in range(5):
+        new = _OPENERS_AND_TITLES_RE.sub("", work)
+        if new == work:
+            break
+        work = new
+    # Look at the first 1-2 actual words. A persona name there = vocative,
+    # UNLESS followed by a stative/reporting verb ('Marcus is annoying',
+    # 'Vale said earlier' — talking about, not addressing).
+    # Anything past position 2 is almost always a reference, not address.
+    words = re.findall(r"[A-Za-z']+", work[:60])[:2]
+    for i, word in enumerate(words):
+        if word.lower() in _PERSONA_KEYS:
+            next_word = words[i + 1].lower() if i + 1 < len(words) else ""
+            if next_word in _STATIVE_VERBS:
+                return None  # reference, not address
+            return word.lower()
+    return None
 
 
 def _consider_prompt(persona) -> str:
