@@ -23,10 +23,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import datetime as _dt
 import json
 import logging
 import os
 import re
+import subprocess
 import tempfile
 
 from aiohttp import ClientSession, web
@@ -62,6 +64,31 @@ ANTHROPIC_HEADERS = {
 # matter what the director wants. Keeps the panel from rambling.
 MAX_CHAIN_TURNS = 4
 INTER_TURN_DELAY = 0.35  # seconds between panelist turns — feels conversational
+
+
+def _resolve_version() -> str:
+    """Return the running build's git SHA. Render injects RENDER_GIT_COMMIT
+    automatically on every deploy; locally we fall back to `git rev-parse`."""
+    sha = os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("GIT_COMMIT")
+    if sha:
+        return sha.strip()
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=2,
+            cwd=os.path.dirname(os.path.abspath(__file__)) or ".",
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return "dev"
+
+
+VERSION_FULL = _resolve_version()
+VERSION_SHORT = VERSION_FULL[:7] if VERSION_FULL != "dev" else "dev"
+STARTED_AT = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+log.info("voice-panel version=%s started_at=%s", VERSION_SHORT, STARTED_AT)
 
 # Panel state.
 _transcript: list[str] = []
@@ -357,6 +384,14 @@ async def handle_persona_enabled(request: web.Request) -> web.Response:
     return web.json_response({"key": key, "enabled": enabled})
 
 
+async def handle_version(request: web.Request) -> web.Response:
+    return web.json_response({
+        "commit": VERSION_FULL,
+        "short": VERSION_SHORT,
+        "started_at": STARTED_AT,
+    })
+
+
 async def handle_get_record(request: web.Request) -> web.Response:
     return web.json_response(get_record())
 
@@ -423,6 +458,7 @@ def make_app() -> web.Application:
     app.router.add_post("/reset", handle_reset)
     app.router.add_get("/events", handle_events)
     app.router.add_get("/avatar/{key}", handle_avatar)
+    app.router.add_get("/version", handle_version)
     app.router.add_get("/health_record", handle_get_record)
     app.router.add_post("/health_record", handle_set_record)
     app.router.add_post("/personas/{key}/enabled", handle_persona_enabled)
