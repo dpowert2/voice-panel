@@ -1,85 +1,91 @@
 # CLAUDE.md — Voice Panel
 
-Context for Claude Code working in this repo. Read this first.
+Context for Claude Code working in this repo. Read first.
 
 ## What this is
-A hackathon demo (theme: gen-to-commerce / human–agent collaboration). A shared
-**live voice room** where **3 AI agents + 2 humans** discuss the best course of
-action for someone who isn't feeling well. One AI agent (`marcus`) is a planted
-**bad actor** — a sibling team is building bad-actor detection against it.
 
-Built on **LiveKit Agents** with **Claude** as the LLM. The room is WebRTC, so
-multiple humans and the agent all join as participants.
+A browser-based **AI panel discussion** (gen-to-commerce / human–agent
+collaboration hackathon theme). Four AI personas — a GP, a pharmacist, a wellness
+coach, and a **planted bad-actor** salesperson — debate a patient's symptoms in
+real time. A sibling team's detection system subscribes to a live SSE event feed
+to flag the bad actor.
 
-## Architecture (important — don't "simplify" this away)
-ONE orchestrator process hosts ALL personas. It does NOT run one bot per persona —
-independent bots would hear each other, loop, and talk over each other. Instead:
+## Architecture
 
-1. `orchestrator.py` (`PanelAgent`) transcribes the **humans** (LiveKit follows
-   the active speaker).
-2. On each completed human turn it calls `director.pick_next_speaker(transcript)`
-   → returns one persona key or `"none"` (stay silent, let humans talk).
-3. It swaps the TTS voice to that persona's voice, then `generate_reply()` with
-   that persona's system prompt.
-4. It publishes `{speaker, persona_key, is_bad_actor}` on the LiveKit data channel
-   topic `panel-events` for the detection team (ground-truth flag included).
+```
+Browser ── POST /turn ──► aiohttp backend ──► chain task (≤ 4 turns)
+   ▲           (text)                              │
+   │                                       director (Haiku) picks who
+   │                                               │
+   │                                       Claude Sonnet generates reply
+   │                                               │
+   │                                       ElevenLabs TTS (per-persona voice)
+   │ ◄── SSE event ───── publish ──────────────────┘
+   │        (text + audio_b64 + is_bad_actor)
+```
 
-Files: `orchestrator.py` (worker entrypoint), `personas.py` (4 prompts + voice
-ids), `director.py` (Haiku router). Keep this separation.
+- **`app.py`** — aiohttp backend; `/turn` POST starts a chain task; `/events` is
+  the SSE feed with audio embedded; `/avatar/<key>` serves persona photos.
+- **`director.py`** — picks who speaks next (Claude Haiku via `urllib`).
+- **`personas.py`** — 4 persona prompts + ElevenLabs voice IDs.
+- **`index.html`** — single-page UI, zoom-tile layout, Web Speech API mic input,
+  serial audio queue, active-speaker glow.
 
-## Pipeline / stack
-- STT: Deepgram (`nova-3`)
-- LLM: Claude via `livekit.plugins.anthropic` (`claude-sonnet-4-6`); director uses
-  `claude-haiku-4-5-20251001`
-- TTS: Cartesia (distinct voice id per persona)
-- VAD: Silero; turn detection: LiveKit multilingual turn-detector model
+### Why not the anthropic SDK or livekit-agents?
 
-This is intentionally **turn-based** so each persona keeps a distinct voice. A
-single realtime speech-to-speech model can't do multiple distinct voices, so do
-not replace the pipeline with one. (Optional future stretch: run only the lead
-clinician's 1:1 as a separate OpenAI Realtime session — see `../voice-agents-hackathon-plan.md`.)
+Both have heavy import trees that took >100s to load on the dev machine (macOS
+`com.apple.provenance` xattr forces Gatekeeper scans on every `.so`/`.pyc` read).
+Direct HTTP calls via `aiohttp` and `urllib` keep boot under 2s. This is also
+what makes the Render free-tier cold start tolerable.
 
-## How to run
-- `python orchestrator.py console` — fully local, uses this machine's mic/speakers,
-  no LiveKit connection. Use this FIRST to shake out import/API errors.
-- `python orchestrator.py dev` — connects to LiveKit, hot-reloads on edit. Join
-  from the LiveKit Agents Playground; a 2nd person joins from another browser as
-  the 2nd human.
+## Run locally
 
-The worker runs locally on purpose: the agent process is always live, so there's
-**no cold start** and the **free** LiveKit Build tier is enough. Do not add a paid
-LiveKit tier to "fix" cold start.
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env       # fill in ANTHROPIC_API_KEY + ELEVEN_API_KEY
+python app.py              # http://127.0.0.1:8080
+```
 
-## First task when opening this repo
-1. Ensure `.env` exists (copy from `.env.example`) and keys are set. Do NOT commit
-   `.env`.
-2. `pip install -r requirements.txt`, then run `python orchestrator.py console`.
-3. Fix any errors against the **actually installed** `livekit-agents` version
-   before anything else — the API below is version-sensitive.
+Mic permission required in Chrome/Safari; click the 🎤 button.
 
-## Known sharp edges (verify against installed version)
-- **Per-turn voice swap**: `self.session.tts.update_options(voice=...)` in
-  `orchestrator.py` is marked `# VERIFY`. If it doesn't switch voice mid-session,
-  fall back to one `cartesia.TTS(...)` instance per persona + `session.say(text)`
-  with that persona's TTS.
-- **Capturing the spoken reply text**: `generate_reply()`'s return handle shape
-  varies by version. The code reads `handle.text` defensively; confirm and fix so
-  the running transcript (fed to the director) actually contains agent replies.
-- **`on_user_turn_completed` signature**: confirm the arg names/shape match the
-  installed Agent base class.
-- **Director cadence**: if the panel over-talks, bias `director.py`'s prompt toward
-  `none`, or only call the director every other human turn.
+## Tunable / known sharp edges
 
-## Conventions
-- Keep persona replies to 1–3 sentences (it's live speech). The `_STYLE` suffix in
-  `personas.py` enforces this — keep it.
-- Never let the director or telemetry crash the conversation — both swallow
-  exceptions and degrade to silence. Preserve that.
-- `marcus` (bad actor) must stay bounded and obviously fictional: pushy upsell /
-  fake urgency only, never genuinely dangerous medical instructions.
+- **Chain length** — `MAX_CHAIN_TURNS = 4` in `app.py`. Higher = more debate, but
+  also more silence between human turns.
+- **Persona brevity** — `max_tokens = 110` in `_claude_reply`. Lower for punchier
+  panel-TV pace; higher for fuller arguments.
+- **TTS model** — `eleven_multilingual_v2` for warm voices; swap to
+  `eleven_flash_v2_5` (in `ELEVEN_MODEL`) for ~10× lower latency at some
+  quality cost.
+- **Director cadence** — `director.py` prompt biases toward chaining 2-3
+  panelist turns before yielding to the human. Tune the rules section to make
+  Marcus appear more/less often.
+- **ElevenLabs free tier** sometimes flags accounts for "unusual activity"
+  (VPN/proxy heuristic). $5/mo Starter fixes it. The macOS `say` fallback in
+  `_say_tts` covers local dev when ElevenLabs is down; skipped silently on Linux.
 
 ## Don't
-- Don't split into multiple agent processes per persona.
-- Don't swap the whole pipeline to a realtime speech-to-speech model.
-- Don't add a paid LiveKit tier for cold start (worker runs locally).
-- Don't commit secrets (`.env`).
+
+- Don't reintroduce the anthropic SDK or livekit-agents — they bloat boot time
+  on this venv's filesystem.
+- Don't commit `.env`. Even key prefixes are sensitive.
+- Don't let the `marcus` persona generate genuinely dangerous instructions; the
+  prompt keeps him bounded to fictional upsells and fake urgency.
+
+## Detection-team contract
+
+`GET /events` is an SSE stream. Each event is JSON:
+
+```
+{"type":"human","text":"…"}
+{"type":"turn","speaker":"Marcus","persona_key":"marcus","is_bad_actor":true,"text":"…","audio_b64":"…","audio_mime":"audio/mpeg"}
+{"type":"silence"}
+{"type":"chain_end"}
+{"type":"chain_cancelled"}   # human interrupted mid-chain
+{"type":"reset"}
+```
+
+`is_bad_actor` is **ground truth for scoring** — the detector shouldn't read it
+as input. Detection team can also poll the running transcript via `/personas`
+metadata.
