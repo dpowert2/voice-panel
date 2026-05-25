@@ -97,6 +97,8 @@
     padding:9px 12px;border-radius:8px;font-size:13px;outline:none;}
   #controls input:focus{border-color:var(--vale)}
   #controls input.listening{border-color:var(--warn);box-shadow:0 0 0 3px rgba(239,107,107,.15);}
+  #controls input.mic-error{border-color:var(--warn);color:var(--warn2);}
+  #controls input.mic-error::placeholder{color:var(--warn2);}
   #controls button{background:var(--panel);color:var(--text);border:1px solid var(--line);
     padding:9px 14px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;}
   #controls button:hover{border-color:var(--mute)}
@@ -339,12 +341,26 @@ let actuallyListening = false;
 let suppressedForAudio = false;
 let restartTimer = null;
 let lastSentAt = 0;
+let lastStartAt = 0;
+let consecutiveQuickEnds = 0;   // rapid start→end loop detection
+const QUICK_END_MS = 800;
+const MAX_QUICK_ENDS = 3;
+
+function setMicError(msg){
+  inputEl.classList.add("mic-error");
+  inputEl.placeholder = msg;
+  micBtn.classList.remove("recording");
+}
+function clearMicError(){
+  inputEl.classList.remove("mic-error");
+}
 
 function setupRecognition(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR){
     micBtn.disabled = true;
     micBtn.title = "Speech recognition not supported — use Chrome or Safari";
+    setMicError("Speech recognition not supported — Chrome or Safari required.");
     return null;
   }
   const r = new SR();
@@ -354,6 +370,8 @@ function setupRecognition(){
 
   r.onstart = () => {
     actuallyListening = true;
+    lastStartAt = Date.now();
+    clearMicError();
     micBtn.classList.add("recording");
     inputEl.classList.add("listening");
     inputEl.placeholder = "Listening…";
@@ -363,19 +381,45 @@ function setupRecognition(){
     actuallyListening = false;
     micBtn.classList.remove("recording");
     inputEl.classList.remove("listening");
-    inputEl.placeholder = "Type a question, or click 🎤 to speak…";
     if (!_audioPlaying && !_chainActive) setSpeaking(null);
+
+    // detect rapid start→end loop (no audio detected, mic device idle, etc.)
+    const sessionDuration = Date.now() - lastStartAt;
+    if (sessionDuration < QUICK_END_MS){
+      consecutiveQuickEnds++;
+      if (consecutiveQuickEnds >= MAX_QUICK_ENDS){
+        wantsListening = false;
+        setMicError("Mic not picking up audio. Check the mic input device or grant permission, then click 🎤 to retry.");
+        return;
+      }
+    } else {
+      consecutiveQuickEnds = 0;
+    }
+
+    inputEl.placeholder = "Type a question, or click 🎤 to speak…";
     if (wantsListening && !suppressedForAudio){
       clearTimeout(restartTimer);
       restartTimer = setTimeout(() => { try { r.start(); } catch(_){} }, 200);
     }
   };
   r.onerror = (e) => {
-    console.warn("speech recognition error:", e.error);
-    if (e.error === "not-allowed"){
+    const err = e.error;
+    console.warn("speech recognition error:", err, e);
+    // fatal — stop trying
+    if (err === "not-allowed" || err === "service-not-allowed"){
       wantsListening = false;
-      alert("Microphone permission denied. Allow it in browser settings and try again.");
+      setMicError("Mic permission denied. Click the 🔒 in the URL bar → Site settings → allow Microphone, then reload.");
+      return;
     }
+    if (err === "audio-capture"){
+      wantsListening = false;
+      setMicError("No microphone detected. Check your audio input device.");
+      return;
+    }
+    // normal — happens during silence, the auto-restart in onend recovers
+    if (err === "no-speech" || err === "aborted") return;
+    // network or other — surface it but keep retrying
+    setMicError(`Mic warning: ${err} (will retry…)`);
   };
   r.onresult = (e) => {
     let final = "", interim = "";
@@ -384,6 +428,7 @@ function setupRecognition(){
       if (res.isFinal) final += res[0].transcript;
       else interim += res[0].transcript;
     }
+    if (interim || final) consecutiveQuickEnds = 0;  // we're getting audio
     if (interim) inputEl.value = interim.trim();
     if (final.trim()){
       const now = Date.now();
@@ -396,9 +441,32 @@ function setupRecognition(){
   return r;
 }
 
-function startMic(){
+/* Probe mic permission via getUserMedia FIRST — gives a clean Chrome prompt
+   instead of letting SpeechRecognition silently fail in the background. */
+async function ensureMicPermission(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    return true;  // older browser; let SpeechRecognition try anyway
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // we only wanted the prompt — release the device immediately so the
+    // SpeechRecognition API can claim it next.
+    stream.getTracks().forEach(t => t.stop());
+    return true;
+  } catch (e) {
+    console.warn("getUserMedia denied:", e);
+    setMicError("Mic permission needed. Allow microphone access for this site, then click 🎤 again.");
+    return false;
+  }
+}
+
+async function startMic(){
+  clearMicError();
+  consecutiveQuickEnds = 0;
   if (!recognition) recognition = setupRecognition();
   if (!recognition) return;
+  const ok = await ensureMicPermission();
+  if (!ok) return;
   wantsListening = true;
   if (!actuallyListening){ try { recognition.start(); } catch(_){} }
 }
