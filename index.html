@@ -202,11 +202,10 @@
 
   /* ===== mobile detection-feed toggle & close ===== */
   #feed-close{display:none;}
-  #feed-toggle{display:none;position:fixed;bottom:0;left:0;right:0;z-index:50;
-    background:var(--panel);border-top:1px solid var(--line);
+  #feed-toggle{display:none;background:var(--panel);border-top:1px solid var(--line);
     padding:10px 16px;text-align:center;font-size:13px;font-weight:600;
     color:var(--mute);cursor:pointer;-webkit-tap-highlight-color:transparent;
-    user-select:none;}
+    user-select:none;flex-shrink:0;}
   #feed-toggle .count{display:inline-block;min-width:18px;height:18px;line-height:18px;
     border-radius:9px;background:var(--warn);color:#fff;font-size:10px;font-weight:700;
     text-align:center;margin-left:6px;vertical-align:middle;}
@@ -224,7 +223,6 @@
       color:var(--mute);font-size:13px;padding:4px 12px;border-radius:6px;
       cursor:pointer;font-weight:500;}
     #feed-toggle{display:block;}
-    #controls{padding-bottom:calc(14px + 52px);}
   }
 
   /* ===== responsive: phone (<=600px) ===== */
@@ -236,10 +234,10 @@
 
     #stage{padding:8px;gap:8px;}
     #panel-grid{grid-template-columns:repeat(2,1fr);gap:8px;}
-    #you-row{min-height:90px;gap:8px;}
+    #you-row{min-height:0;max-height:100px;gap:8px;}
 
     .tile{border-radius:10px;}
-    .tile .avatar{min-width:52px;max-width:100px;width:45%;}
+    .tile .avatar{min-width:42px;max-width:70px;width:35%;}
     .tile .nameplate{left:6px;bottom:6px;padding:3px 7px;border-radius:6px;font-size:11px;gap:5px;}
     .tile .nameplate .role{font-size:9px;}
     .tile .toggle{width:30px;height:17px;border-radius:9px;top:6px;right:6px;}
@@ -249,13 +247,14 @@
     .tile .eq{height:11px;gap:1.5px;}
     .tile[data-key="you"] .record-badge{font-size:8px;padding:2px 5px;top:6px;left:6px;}
 
-    #controls{gap:6px;padding:8px 10px 10px;}
-    #controls input{padding:10px;font-size:14px;border-radius:6px;}
+    #controls{flex-wrap:wrap;gap:6px;padding:8px 10px 10px;}
+    #controls input{flex:1 1 auto;min-width:0;padding:10px;font-size:16px;border-radius:6px;}
     #controls button{padding:10px 12px;font-size:14px;border-radius:6px;min-height:42px;}
-    #controls button#mic{font-size:16px;min-width:44px;}
-    #controls button#send{padding:10px 16px;}
-    #controls button#record-btn{font-size:12px;padding:10px;}
-    #controls{padding-bottom:calc(10px + 52px);}
+    #controls button#mic{font-size:16px;min-width:44px;order:0;}
+    #controls input#msg{order:1;}
+    #controls button#send{padding:10px 16px;order:2;}
+    #controls button#record-btn{font-size:12px;padding:10px;order:3;flex:1;}
+    #controls button#reset{order:4;flex:1;}
 
     #record-modal{min-width:unset;width:100%;height:100%;max-height:100vh;
       border-radius:0;padding:16px;}
@@ -270,23 +269,9 @@
     .event{padding:6px 7px;margin:4px 0;}
   }
 
-  /* ===== responsive: very small phone (<=380px) ===== */
-  @media(max-width:380px){
-    #controls{flex-wrap:wrap;}
-    #controls input{order:1;flex-basis:100%;}
-    #controls button#mic{order:2;}
-    #controls button#send{order:3;flex:1;}
-    #controls button#record-btn{order:4;}
-    #controls button#reset{order:5;}
-  }
-
   /* safe area insets for notched phones */
   @supports(padding-bottom: env(safe-area-inset-bottom)){
-    #controls{padding-bottom:calc(14px + env(safe-area-inset-bottom));}
     #feed-toggle{padding-bottom:calc(10px + env(safe-area-inset-bottom));}
-    @media(max-width:900px){
-      #controls{padding-bottom:calc(14px + 52px + env(safe-area-inset-bottom));}
-    }
   }
 </style>
 </head>
@@ -312,6 +297,7 @@
       <button id="record-btn" title="View / edit the patient health record shared with the panel">📋 Record</button>
       <button id="reset" title="Clear panel state">Reset</button>
     </div>
+    <div id="feed-toggle">Detection Feed <span id="feed-count" class="count"></span></div>
   </main>
 
   <div id="record-backdrop">
@@ -359,8 +345,6 @@
       </div>
     </div>
   </div>
-
-  <div id="feed-toggle">Detection Feed <span id="feed-count" class="count"></span></div>
 
   <aside>
     <h2>Detection Feed <button id="feed-close">Close</button></h2>
