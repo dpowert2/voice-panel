@@ -214,9 +214,10 @@
     text-align:center;margin-left:6px;vertical-align:middle;}
   #feed-toggle .count:empty{display:none;}
 
-  /* ===== responsive: tablet (<=900px) ===== */
+  /* ===== responsive: tablet / phone (<=900px) ===== */
   @media(max-width:900px){
     body{grid-template-columns:1fr;grid-template-rows:1fr;overflow:hidden;}
+
     aside{position:fixed;inset:0;z-index:60;transform:translateY(100%);
       transition:transform .3s ease;border-left:none;border-radius:18px 18px 0 0;
       box-shadow:0 -8px 40px rgba(0,0,0,.5);}
@@ -226,40 +227,16 @@
       color:var(--mute);font-size:13px;padding:4px 12px;border-radius:6px;
       cursor:pointer;font-weight:500;}
     #feed-toggle{display:block;}
-  }
 
-  /* ===== responsive: phone (<=600px) ===== */
-  @media(max-width:600px){
-    header{padding:10px 14px;}
-    header h1{font-size:12px;}
-    header .sub{font-size:11px;}
-    header .version{font-size:9px;padding:1px 5px;}
-
-    #stage{padding:8px;gap:8px;}
-    #panel-grid{grid-template-columns:repeat(2,1fr);gap:8px;}
     #you-row{display:none;}
-
-    .tile{border-radius:10px;}
-    .tile .avatar{min-width:42px;max-width:70px;width:35%;}
-    .tile .nameplate{left:6px;bottom:6px;padding:3px 7px;border-radius:6px;font-size:11px;gap:5px;}
-    .tile .nameplate .role{font-size:9px;}
-    .tile .toggle{width:30px;height:17px;border-radius:9px;top:6px;right:6px;}
-    .tile .toggle::after{width:13px;height:13px;transform:translateX(13px);}
-    .tile.disabled .toggle::after{transform:translateX(0);}
-    .tile .eq i{width:2px;}
-    .tile .eq{height:11px;gap:1.5px;}
-    .tile[data-key="you"] .record-badge{font-size:8px;padding:2px 5px;top:6px;left:6px;}
-
     #controls{display:none;}
 
-    #ptt-bar{display:flex;flex-direction:column;gap:8px;padding:8px 10px;
+    #ptt-bar{display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 10px;
       border-top:1px solid var(--line);background:var(--bg);flex-shrink:0;}
     #ptt-utils{display:flex;gap:6px;align-items:center;justify-content:center;}
     #ptt-utils button{background:var(--panel);color:var(--text);border:1px solid var(--line);
       padding:8px 12px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;
       white-space:nowrap;}
-
-    #ptt-bar{align-items:center;}
     #ptt{display:flex;flex-direction:column;align-items:center;justify-content:center;
       width:100px;height:100px;border-radius:50%;border:3px solid var(--line);
       background:var(--panel);color:var(--text);
@@ -277,6 +254,28 @@
     #record-modal .row2{grid-template-columns:1fr 1fr;}
     #record-modal input, #record-modal textarea{font-size:16px;padding:10px;}
     #record-modal .actions button{padding:12px 18px;font-size:14px;}
+  }
+
+  /* ===== responsive: small phone (<=600px) ===== */
+  @media(max-width:600px){
+    header{padding:10px 14px;}
+    header h1{font-size:12px;}
+    header .sub{font-size:11px;}
+    header .version{font-size:9px;padding:1px 5px;}
+
+    #stage{padding:8px;gap:8px;}
+    #panel-grid{grid-template-columns:repeat(2,1fr);gap:8px;}
+
+    .tile{border-radius:10px;}
+    .tile .avatar{min-width:42px;max-width:70px;width:35%;}
+    .tile .nameplate{left:6px;bottom:6px;padding:3px 7px;border-radius:6px;font-size:11px;gap:5px;}
+    .tile .nameplate .role{font-size:9px;}
+    .tile .toggle{width:30px;height:17px;border-radius:9px;top:6px;right:6px;}
+    .tile .toggle::after{width:13px;height:13px;transform:translateX(13px);}
+    .tile.disabled .toggle::after{transform:translateX(0);}
+    .tile .eq i{width:2px;}
+    .tile .eq{height:11px;gap:1.5px;}
+    .tile[data-key="you"] .record-badge{font-size:8px;padding:2px 5px;top:6px;left:6px;}
 
     aside{border-radius:14px 14px 0 0;}
     aside h2{font-size:11px;padding:14px;}
