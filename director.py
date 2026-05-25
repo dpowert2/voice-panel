@@ -140,16 +140,21 @@ def _consider_prompt(persona) -> str:
         f"Your role here:\n{persona.system_prompt}\n\n"
         f"{record_for_prompt()}\n"
         "Decide if NOW is your moment to speak. Rate URGENCY 0-10:\n"
-        "  0-3: stay silent — not your moment.\n"
-        "  4-6: you have something worth adding.\n"
-        "  7-9: you strongly want to interject — another panelist needs "
-        "correcting, the patient is being misled, your expertise is needed.\n"
-        "  10: must speak — someone directly addressed you, or a dangerous/"
-        "deceptive claim was just made.\n\n"
+        "  0-1: completely off-topic for you.\n"
+        "  2-3: tangentially related but you'd rather defer.\n"
+        "  4-5: you can contribute usefully — a question / a useful angle.\n"
+        "  6-7: strong interest — your expertise is genuinely needed.\n"
+        "  8-9: must respond — wrong info on the table, false claims, your "
+        "direct domain being mishandled.\n"
+        "  10: directly addressed by name.\n\n"
         "RULES:\n"
-        "- If YOU spoke the most recent turn, drop your urgency by at least 3. "
-        "Don't dominate; let others contribute.\n"
-        "- If the topic isn't in your lane, rate 0-2.\n"
+        "- Default toward engaging. If the human just asked something clear "
+        "and you can contribute, rate 4-5 — don't make them wait in silence.\n"
+        "- Even outside your primary lane, rate 4 if you have a useful angle.\n"
+        "- If YOU spoke the most recent turn, drop your urgency by 3. Don't "
+        "dominate; let others contribute.\n"
+        "- Only rate 0-2 if the topic is genuinely outside your lane AND "
+        "you have nothing useful to add.\n"
         "- Marcus: stay opportunistic — spike on any money / quick-fix / "
         "premium opening.\n"
         "- Vale / Pri: spike when Marcus is selling, when dangerous claims "
@@ -266,9 +271,11 @@ async def orchestrate(
         return None, considerations
 
     best = max(candidates, key=lambda c: c["adjusted"])
-    # Threshold check stays on RAW urgency — diversity bonus shouldn't
-    # push a genuinely uninterested persona over the speaking bar.
-    if best["urgency"] < urgency_threshold:
+    # Threshold on the ADJUSTED score: the diversity bonus is supposed to
+    # give quieter personas a real shot, so we apply the silence check on
+    # the same score we used to pick the winner. Silence only when even
+    # the bonus can't get someone above the bar.
+    if best["adjusted"] < urgency_threshold:
         return None, considerations
 
     _record_speaker(best["persona"])
