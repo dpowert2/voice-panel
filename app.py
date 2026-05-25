@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)  # shell may pre-set blank ANTHROPIC_API_KEY
 
-from director import pick_next_speaker  # noqa: E402
+from director import detect_direct_address, orchestrate  # noqa: E402
 from personas import PERSONAS  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -190,24 +190,35 @@ def _strip_name_prefix(text: str, persona) -> str:
     return pat.sub("", text).strip()
 
 
-async def _run_chain() -> None:
-    """Loop: pick → reply → speak → publish. Stops on 'none' or cap."""
+async def _run_chain(forced_first_speaker: str | None = None) -> None:
+    """Loop: orchestrate → reply → speak → publish. Stops on silence or cap.
+
+    `forced_first_speaker`: when set, the first turn skips the multi-agent
+    vote and goes directly to that persona. Used for direct-address routing
+    ("Vale, what do you think?"). The chain then continues normally.
+    """
     last_who: str | None = None
     spoke_count = 0
     try:
         for i in range(MAX_CHAIN_TURNS):
             transcript_ctx = "\n".join(_transcript[-24:])
-            loop = asyncio.get_running_loop()
-            who = await loop.run_in_executor(None, pick_next_speaker, transcript_ctx)
-            log.info("chain turn %d: director picked: %s", i, who)
+            forced = forced_first_speaker if i == 0 else None
+            who, considerations = await orchestrate(
+                transcript_ctx,
+                forced_first=forced,
+                last_speaker=last_who,
+            )
+            # Always log the parallel vote for visibility — even when forced,
+            # so the detection team / observer can see what each agent thought.
+            log.info(
+                "chain turn %d: orchestrate → %s | votes: %s",
+                i, who,
+                ", ".join(f"{c['persona']}={c['urgency']}" for c in considerations),
+            )
 
-            if who == "none" or who not in PERSONAS:
+            if who is None or who not in PERSONAS:
                 if spoke_count == 0:
-                    # human got 'none' on a fresh prompt — let them know
                     await _publish({"type": "silence"})
-                break
-            if who == last_who:
-                log.info("chain turn %d: director picked %s twice in a row; ending", i, who)
                 break
 
             persona = PERSONAS[who]
@@ -264,10 +275,17 @@ async def handle_turn(request: web.Request) -> web.Response:
             pass
 
     _transcript.append(f"Human: {user_text}")
-    await _publish({"type": "human", "text": user_text})
+    forced = detect_direct_address(user_text)
+    if forced:
+        log.info("direct-address detected: forcing %s as first speaker", forced)
+    await _publish({
+        "type": "human",
+        "text": user_text,
+        **({"directly_addressed": forced} if forced else {}),
+    })
 
-    _chain_task = asyncio.create_task(_run_chain())
-    return web.json_response({"ok": True})
+    _chain_task = asyncio.create_task(_run_chain(forced_first_speaker=forced))
+    return web.json_response({"ok": True, "directly_addressed": forced})
 
 
 async def handle_events(request: web.Request) -> web.StreamResponse:

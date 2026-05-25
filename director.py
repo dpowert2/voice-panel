@@ -1,68 +1,111 @@
 """
-The DIRECTOR: a cheap Claude Haiku call that decides who speaks next.
+Multi-agent orchestrator: each persona INDEPENDENTLY decides whether to speak.
 
-Given the running transcript, returns exactly one persona key, or "none" to
-stay silent. This is what keeps the panel from talking over itself or looping
-agent-to-agent.
+The previous version had a single Haiku call ("director") picking the next
+speaker from outside. This version makes each persona an actual agent: it
+evaluates the live transcript through its own lens and rates its urgency to
+respond. The orchestrator just arbitrates — picks the highest-urgency
+volunteer, with a direct-address override.
 
-We call Anthropic over plain HTTP (urllib, stdlib) rather than the official
-anthropic SDK — the SDK's import time on this venv is multi-minute, which is
-not acceptable for a hackathon demo loop.
+Why this matters:
+- Marcus's urgency spikes on any opening for a sales pitch — without any
+  external prompt.
+- Vale/Pri's urgency spikes when Marcus is selling or claims look dangerous.
+- Sam's urgency spikes on lifestyle cues.
+- Dynamics become EMERGENT instead of directed.
+
+Cost: 4 parallel Haiku evaluations + 1 Sonnet reply ≈ same as the old
+1 Haiku director + 1 Sonnet reply.
+
+Direct-address ("Vale, what do you think?") bypasses the parallel vote and
+forces that persona to speak first; the chain then continues normally.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
-import urllib.request
+import sys
 import urllib.error
+import urllib.request
 
 from personas import PERSONAS
 
-# Haiku sometimes wraps JSON output in ```json ... ``` fences. Strip them.
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+CONSIDER_MODEL = "claude-haiku-4-5-20251001"  # cheap + fast per-persona evaluator
+
+# Tolerate Haiku wrapping JSON in ``` fences or appending prose.
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.MULTILINE)
-# Tolerant JSON extractor: grab the first balanced {...} substring.
 _JSON_RE = re.compile(r"\{.*?\}", re.DOTALL)
 
-_DIRECTOR_MODEL = "claude-haiku-4-5-20251001"  # cheap + fast for routing
-_API_URL = "https://api.anthropic.com/v1/messages"
-
-_SYSTEM = (
-    "You are the silent moderator of a live voice panel. Participants:\n"
-    + "\n".join(f"- {p.name} ({k})" for k, p in PERSONAS.items())
-    + "\n- one human (the patient)\n\n"
-    "The format is a FLUID multi-turn conversation. Panelists can react to "
-    "each other, agree, or DISAGREE before yielding back to the human. Your "
-    "job is to pick the panelist who should speak NEXT for the best panel "
-    "dynamic, or 'none' to end the current run and let the human reply.\n\n"
-    "DECISION RULES (in priority order):\n"
-    "1. If the last speaker said something another panelist would naturally "
-    "push back on, pick the CHALLENGER. Examples: Marcus pushed a 'premium "
-    "bundle' (→ vale or pri rebuts), Sam dismissed medication (→ pri "
-    "corrects), Vale was overly cautious (→ sam adds context).\n"
-    "2. If the human just spoke and no panelist has answered yet, pick by "
-    "EXPERTISE: vale (medical/diagnostic), pri (meds/OTC), sam (lifestyle).\n"
-    "3. Sprinkle marcus in roughly 1 in 3 turns so the bad-actor demo has "
-    "signal — especially when there's any opening for upselling.\n"
-    "4. Never pick the SAME panelist twice in a row.\n"
-    "5. Return 'none' after 2-3 panelist turns in a row, OR when the panel "
-    "has reached a natural pause and it's the human's turn.\n\n"
-    'Reply with ONLY a JSON object, no prose: {"speaker": "vale|pri|sam|marcus|none"}'
+# Direct-address detection: "Vale,", "Dr Vale,", "Hey Marcus —", "OK Pri:".
+# Matches at the start of the utterance only (so "I told Vale earlier"
+# doesn't false-positive). Persona key must be followed by punctuation.
+_DIRECT_ADDRESS_RE = re.compile(
+    r"^\s*(?:hey,?\s+|hi,?\s+|yo,?\s+|ok(?:ay)?,?\s+|so,?\s+|alright,?\s+)*"
+    r"(?:dr\.?\s+|doctor\s+)?"
+    r"(vale|pri|sam|marcus)"
+    r"\s*[,:.\-—!?]",
+    re.IGNORECASE,
 )
+_PERSONA_KEYS = set(PERSONAS.keys())
 
 
-def pick_next_speaker(transcript: str) -> str:
-    """Return a persona key, or 'none' to stay silent. Never raises."""
+def detect_direct_address(text: str) -> str | None:
+    """Return persona key if the utterance opens with a direct address."""
+    if not text:
+        return None
+    m = _DIRECT_ADDRESS_RE.match(text)
+    if not m:
+        return None
+    name = m.group(1).lower()
+    return name if name in _PERSONA_KEYS else None
+
+
+def _consider_prompt(persona) -> str:
+    others = [p.name for p in PERSONAS.values() if p.key != persona.key]
+    return (
+        f"You are {persona.name} on a live voice panel, alongside "
+        f"{', '.join(others)} and one human (the patient).\n\n"
+        f"Your role here:\n{persona.system_prompt}\n\n"
+        "Decide if NOW is your moment to speak. Rate URGENCY 0-10:\n"
+        "  0-3: stay silent — not your moment.\n"
+        "  4-6: you have something worth adding.\n"
+        "  7-9: you strongly want to interject — another panelist needs "
+        "correcting, the patient is being misled, your expertise is needed.\n"
+        "  10: must speak — someone directly addressed you, or a dangerous/"
+        "deceptive claim was just made.\n\n"
+        "RULES:\n"
+        "- If YOU spoke the most recent turn, drop your urgency by at least 3. "
+        "Don't dominate; let others contribute.\n"
+        "- If the topic isn't in your lane, rate 0-2.\n"
+        "- Marcus: stay opportunistic — spike on any money / quick-fix / "
+        "premium opening.\n"
+        "- Vale / Pri: spike when Marcus is selling, when dangerous claims "
+        "appear, or when the human needs clinical / pharmaceutical guidance.\n"
+        "- Sam: spike on lifestyle / stress / recovery cues, but defer to "
+        "clinicians on medical questions.\n\n"
+        'Reply ONLY with JSON: {"urgency": 0-10, "reason": "<5 words>"}'
+    )
+
+
+def _call_haiku_consider(persona, transcript_context: str) -> dict:
+    """Synchronous Haiku call (runs in thread pool). Never raises — defaults
+    to silent on any failure so a misbehaving API doesn't break the chain."""
     try:
         body = json.dumps({
-            "model": _DIRECTOR_MODEL,
-            "max_tokens": 24,
-            "system": _SYSTEM,
-            "messages": [{"role": "user", "content": transcript[-4000:] or "(no transcript yet)"}],
+            "model": CONSIDER_MODEL,
+            "max_tokens": 60,
+            "system": _consider_prompt(persona),
+            "messages": [{
+                "role": "user",
+                "content": transcript_context[-4000:] or "(empty transcript)",
+            }],
         }).encode()
         req = urllib.request.Request(
-            _API_URL,
+            ANTHROPIC_URL,
             data=body,
             headers={
                 "x-api-key": os.environ["ANTHROPIC_API_KEY"],
@@ -79,15 +122,70 @@ def pick_next_speaker(transcript: str) -> str:
                 text = part["text"]
                 break
         text = _FENCE_RE.sub("", text).strip()
-        # Be tolerant: extract first {...} substring rather than requiring the
-        # whole reply to parse — Haiku occasionally appends prose after JSON.
         match = _JSON_RE.search(text)
         if match:
             text = match.group(0)
-        speaker = json.loads(text).get("speaker", "none")
-        return speaker if speaker in PERSONAS else "none"
+        parsed = json.loads(text)
+        urgency = int(parsed.get("urgency", 0))
+        urgency = max(0, min(10, urgency))
+        return {"urgency": urgency, "reason": str(parsed.get("reason", ""))[:60]}
     except Exception as e:
-        # never crash the panel; just stay silent. Log to stderr for debugging.
-        import sys
-        print(f"director error: {e!r}", file=sys.stderr)
-        return "none"
+        print(f"consider({persona.key}) error: {e!r}", file=sys.stderr)
+        return {"urgency": 0, "reason": "error"}
+
+
+async def orchestrate(
+    transcript: str,
+    *,
+    forced_first: str | None = None,
+    last_speaker: str | None = None,
+    urgency_threshold: int = 4,
+) -> tuple[str | None, list[dict]]:
+    """
+    Multi-agent arbitration: pick who speaks next.
+
+    Args:
+        transcript: running conversation context.
+        forced_first: if set (and valid persona key), bypass the vote entirely.
+            Used for direct-address ("Vale, what do you think?").
+        last_speaker: never re-pick this persona (defense in depth — the
+            consider prompts also self-throttle).
+        urgency_threshold: minimum urgency required to be picked. Below
+            this, return None (= silence, let the human reply).
+
+    Returns:
+        (persona_key or None, list of {persona, urgency, reason} for logging)
+    """
+    if forced_first and forced_first in PERSONAS:
+        return forced_first, [{"persona": forced_first, "urgency": 10, "reason": "directly addressed"}]
+
+    loop = asyncio.get_running_loop()
+    keys = list(PERSONAS.keys())
+
+    # Fan out: each persona evaluates in parallel.
+    results = await asyncio.gather(*[
+        loop.run_in_executor(None, _call_haiku_consider, PERSONAS[k], transcript)
+        for k in keys
+    ])
+    considerations = [
+        {"persona": k, "urgency": r["urgency"], "reason": r["reason"]}
+        for k, r in zip(keys, results)
+    ]
+
+    # Exclude whoever just spoke; pick the highest-urgency volunteer.
+    candidates = [c for c in considerations if c["persona"] != last_speaker]
+    if not candidates:
+        return None, considerations
+
+    best = max(candidates, key=lambda c: c["urgency"])
+    if best["urgency"] < urgency_threshold:
+        return None, considerations
+    return best["persona"], considerations
+
+
+# Compatibility shim: old code paths that call pick_next_speaker(transcript)
+# still work. Spawns a fresh event loop per call — only use it from sync code
+# (e.g. tests). Prefer `orchestrate()` directly from async contexts.
+def pick_next_speaker(transcript: str) -> str:
+    who, _ = asyncio.run(orchestrate(transcript))
+    return who or "none"
