@@ -479,8 +479,9 @@ async def _cartesia_stream_input(
         async with _http.ws_connect(
             CARTESIA_WS_URL, headers=headers, heartbeat=20,
         ) as ws:
-            # Prime the context with an empty initial transcript.
-            await ws.send_str(_gen("", True))
+            # Cartesia rejects empty transcripts when continue:true, so we
+            # don't pre-send a priming message — just start streaming tokens
+            # the moment the LLM yields its first delta.
 
             async def send_tokens() -> None:
                 try:
