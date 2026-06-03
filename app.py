@@ -562,7 +562,31 @@ CARTESIA_AGENT_VERSION = "2025-04-16"
 # A short PCM blob of near-silence to trigger the agent's endpointing. We
 # build this once at module load. 16-bit mono PCM at 24kHz, 600ms.
 import struct as _struct
-_SEED_AUDIO_PCM = _struct.pack("<h", 0) * (24000 * 600 // 1000)
+import math as _math
+
+
+def _make_seed_pcm(duration_ms: int = 600, freq: int = 440, sr: int = 24000) -> bytes:
+    """Audible mono 16-bit PCM tone. Cartesia VAD only fires on audible
+    signal; silence seeds leave the agent waiting forever for the user to
+    stop talking. A short 440 Hz tone reliably trips VAD; Whisper
+    transcribes it as nothing or near-nothing, so the LLM relies on our
+    system_prompt context to know what to say."""
+    n = sr * duration_ms // 1000
+    fade = sr * 30 // 1000   # 30ms attack/release to avoid click
+    buf = bytearray(n * 2)
+    amp = 0.22 * 32767
+    for i in range(n):
+        env = 1.0
+        if i < fade:
+            env = i / fade
+        elif i > n - fade:
+            env = (n - i) / fade
+        sample = int(amp * env * _math.sin(2 * _math.pi * freq * i / sr))
+        _struct.pack_into("<h", buf, i * 2, sample)
+    return bytes(buf)
+
+
+_SEED_AUDIO_PCM = _make_seed_pcm()
 
 
 def _build_agent_system_prompt(persona, panel_context: str) -> str:
@@ -658,8 +682,27 @@ async def _cartesia_agent_stream(
             # after a one-time WAV header. We close on `clear` (agent done) or
             # when no media for ~3s after first byte.
             had_first_byte = False
+            AGENT_TIMEOUT_S = 25.0   # hard ceiling for the whole turn
+            INACTIVITY_S = 8.0       # if no event in 8s and we have audio, end
+            turn_start_at = time.monotonic()
+            last_event_at = turn_start_at
             try:
-                async for msg in ws:
+                while True:
+                    try:
+                        msg = await asyncio.wait_for(ws.receive(), timeout=2.0)
+                    except asyncio.TimeoutError:
+                        now = time.monotonic()
+                        if now - turn_start_at > AGENT_TIMEOUT_S:
+                            log.warning("agent %s: hard timeout (%ds, no media_output)",
+                                        persona.key, int(AGENT_TIMEOUT_S))
+                            _diag_log(_diag_eleven, persona=persona.key,
+                                      error=f"agent timeout after {int(AGENT_TIMEOUT_S)}s")
+                            break
+                        if had_first_byte and now - last_event_at > INACTIVITY_S:
+                            log.info("agent %s: inactivity end after audio captured", persona.key)
+                            break
+                        continue
+                    last_event_at = time.monotonic()
                     if msg.type != aiohttp.WSMsgType.TEXT:
                         if msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSED):
                             log.warning("agent WS closed for %s: %s",
