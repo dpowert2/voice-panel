@@ -56,7 +56,9 @@ log = logging.getLogger("voice-panel")
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ELEVEN_API_KEY = os.environ["ELEVEN_API_KEY"]
-CARTESIA_API_KEY = os.environ.get("CARTESIA_API_KEY", "")  # optional — only needed if provider toggled to cartesia
+# Cartesia key: env var wins; fallback is committed for demo expedience.
+# ROTATE THIS in the Cartesia dashboard right after the demo — it's public.
+CARTESIA_API_KEY = os.environ.get("CARTESIA_API_KEY", "sk_car_uAPGrHGAx7CbGAKEmBPiXZ")
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
