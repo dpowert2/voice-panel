@@ -561,32 +561,64 @@ CARTESIA_AGENT_WS = "wss://api.cartesia.ai/agents/stream/{agent_id}"
 CARTESIA_AGENT_VERSION = "2025-04-16"
 # A short PCM blob of near-silence to trigger the agent's endpointing. We
 # build this once at module load. 16-bit mono PCM at 24kHz, 600ms.
-import struct as _struct
-import math as _math
+# Trailing silence after the speech seed; Cartesia's STT VAD needs to *hear*
+# silence in the audio stream to endpoint and consider the user "done talking".
+# 1.5 seconds at 24 kHz mono 16-bit s16le = 72000 bytes of zeros.
+_AGENT_SILENCE_PAD = b"\x00\x00" * (24000 * 3 // 2)
 
 
-def _make_seed_pcm(duration_ms: int = 600, freq: int = 440, sr: int = 24000) -> bytes:
-    """Audible mono 16-bit PCM tone. Cartesia VAD only fires on audible
-    signal; silence seeds leave the agent waiting forever for the user to
-    stop talking. A short 440 Hz tone reliably trips VAD; Whisper
-    transcribes it as nothing or near-nothing, so the LLM relies on our
-    system_prompt context to know what to say."""
-    n = sr * duration_ms // 1000
-    fade = sr * 30 // 1000   # 30ms attack/release to avoid click
-    buf = bytearray(n * 2)
-    amp = 0.22 * 32767
-    for i in range(n):
-        env = 1.0
-        if i < fade:
-            env = i / fade
-        elif i > n - fade:
-            env = (n - i) / fade
-        sample = int(amp * env * _math.sin(2 * _math.pi * freq * i / sr))
-        _struct.pack_into("<h", buf, i * 2, sample)
-    return bytes(buf)
+async def _cartesia_tts_pcm_raw(text: str, voice_id: str) -> bytes:
+    """One-shot Cartesia REST TTS that returns raw 24 kHz mono s16le PCM bytes.
+    Used to render the speech seed we feed into agent WebSockets."""
+    if not text.strip() or not CARTESIA_API_KEY:
+        return b""
+    headers = {
+        "X-API-Key": CARTESIA_API_KEY,
+        "Cartesia-Version": "2026-03-01",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model_id": CARTESIA_MODEL if False else "sonic-3",  # explicit
+        "transcript": text,
+        "voice": {"mode": "id", "id": voice_id},
+        "language": "en",
+        "output_format": {
+            "container": "raw",
+            "encoding": "pcm_s16le",
+            "sample_rate": 24000,
+        },
+    }
+    try:
+        async with _http.post(
+            "https://api.cartesia.ai/tts/bytes",
+            json=payload, headers=headers,
+            timeout=aiohttp.ClientTimeout(total=20),
+        ) as r:
+            if r.status != 200:
+                body = await r.text()
+                log.warning("seed-TTS %d: %s", r.status, body[:200])
+                return b""
+            return await r.read()
+    except Exception:
+        log.exception("seed-TTS failed")
+        return b""
 
 
-_SEED_AUDIO_PCM = _make_seed_pcm()
+def _pick_seed_text(panel_context: str) -> str:
+    """Pull the most recent panel utterance to use as the agent's audible
+    'user input'. Falls back to a neutral prompt if transcript is empty."""
+    if not panel_context.strip():
+        return "Continue the panel discussion."
+    # Take the last non-empty line as the seed.
+    lines = [ln.strip() for ln in panel_context.splitlines() if ln.strip()]
+    if not lines:
+        return "Continue the panel discussion."
+    last = lines[-1]
+    # Strip persona name prefix if present ("Dr. Vale: ..." -> "...").
+    if ":" in last and len(last.split(":", 1)[0]) < 40:
+        last = last.split(":", 1)[1].strip()
+    # Cap length so seed doesn't balloon turn latency.
+    return last[:280]
 
 
 def _build_agent_system_prompt(persona, panel_context: str) -> str:
@@ -659,19 +691,32 @@ async def _cartesia_agent_stream(
                 },
             }))
 
-            # Stream the seed audio in 100ms chunks so the agent's STT/VAD
-            # endpoints quickly. 600ms total -> 6 chunks.
-            CHUNK_SIZE = 24000 * 100 // 1000 * 2  # 4800 bytes per 100ms
+            # Build the audio seed: TTS of the latest panel utterance + 1.5s of
+            # silence. The agent's STT needs to HEAR silence in the byte stream
+            # (not just absence of bytes) to endpoint and run the LLM.
+            seed_text = _pick_seed_text(panel_context)
+            speech_pcm = await _cartesia_tts_pcm_raw(
+                seed_text, persona.cartesia_voice_id,
+            )
+            if not speech_pcm:
+                # If seed TTS failed, fall back to a short generated silence;
+                # the agent may still respond after timeout but quality will drop.
+                speech_pcm = b"\x00\x00" * (24000 * 1)  # 1s silence fallback
+            audio_in = speech_pcm + _AGENT_SILENCE_PAD
+
+            # Stream at REAL-TIME pacing: 40ms chunks every 40ms. Going faster
+            # makes the agent's STT/VAD fail to lock onto utterance boundaries.
+            CHUNK_SIZE = 24000 * 40 // 1000 * 2  # 1920 bytes per 40ms
             async def feed_seed():
                 try:
-                    for i in range(0, len(_SEED_AUDIO_PCM), CHUNK_SIZE):
-                        chunk = _SEED_AUDIO_PCM[i:i + CHUNK_SIZE]
+                    for i in range(0, len(audio_in), CHUNK_SIZE):
+                        chunk = audio_in[i:i + CHUNK_SIZE]
                         await ws.send_str(json.dumps({
                             "event": "media_input",
                             "stream_id": stream_id,
                             "media": {"payload": base64.b64encode(chunk).decode()},
                         }))
-                        await asyncio.sleep(0.05)  # natural pacing
+                        await asyncio.sleep(0.04)  # realtime pacing
                 except Exception:
                     log.exception("agent feed_seed failed")
 
@@ -682,7 +727,7 @@ async def _cartesia_agent_stream(
             # after a one-time WAV header. We close on `clear` (agent done) or
             # when no media for ~3s after first byte.
             had_first_byte = False
-            AGENT_TIMEOUT_S = 25.0   # hard ceiling for the whole turn
+            AGENT_TIMEOUT_S = 35.0   # hard ceiling: seed-TTS + realtime-pacing + endpointing + LLM + TTS
             INACTIVITY_S = 8.0       # if no event in 8s and we have audio, end
             turn_start_at = time.monotonic()
             last_event_at = turn_start_at
