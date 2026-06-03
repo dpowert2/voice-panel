@@ -31,6 +31,8 @@ import re
 import secrets
 import subprocess
 import tempfile
+import time
+from collections import deque
 from typing import AsyncIterator
 
 import aiohttp
@@ -240,6 +242,26 @@ class AudioStream:
 
 
 _audio_streams: dict[str, AudioStream] = {}
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics — server-side ring buffer + per-stream metadata
+# ---------------------------------------------------------------------------
+# Append-only structures inspected via GET /diag/state. Cheap to maintain
+# (no I/O), bounded so they can't grow unbounded under demo load.
+
+_diag_audio: "deque[dict]" = deque(maxlen=40)   # one entry per /turn-audio request
+_diag_chain: "deque[dict]" = deque(maxlen=40)   # turn_start / turn_end / chain_end markers
+_diag_eleven: "deque[dict]" = deque(maxlen=40)  # ElevenLabs streaming errors / completions
+
+def _diag_log(bucket: "deque[dict]", **kw) -> None:
+    """Push a timestamped event into a diagnostic ring buffer. Cheap; never raises."""
+    try:
+        kw.setdefault("ts", time.time())
+        bucket.append(kw)
+    except Exception:
+        pass
+
 _AUDIO_STREAM_TTL_SECONDS = 120  # GC abandoned streams
 
 
@@ -343,6 +365,7 @@ async def _eleven_stream_input(
                             "eleven WS error for %s: %s",
                             persona.key, ev,
                         )
+                        _diag_log(_diag_eleven, persona=persona.key, error=str(ev)[:200])
                         break
                     audio_b64 = ev.get("audio")
                     if audio_b64:
@@ -642,6 +665,7 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
 
             # Tell the frontend immediately so it can open <audio
             # src="/turn-audio/<id>"> while we're still generating.
+            _diag_log(_diag_chain, kind="turn_start", id=turn_id, who=persona.key)
             await _publish({
                 "type": "turn_start",
                 "id": turn_id,
@@ -679,6 +703,7 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
                 break
 
             _transcript.append(f"{persona.name}: {reply_text}")
+            _diag_log(_diag_chain, kind="turn_end", id=turn_id, who=persona.key, reply_chars=len(reply_text))
             await _publish({
                 "type": "turn_end",
                 "id": turn_id,
@@ -702,6 +727,7 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
         await _publish({"type": "chain_cancelled"})
         raise
     finally:
+        _diag_log(_diag_chain, kind="chain_end")
         await _publish({"type": "chain_end"})
 
 
@@ -924,7 +950,14 @@ async def handle_turn_audio(request: web.Request) -> web.StreamResponse:
     turn_id = request.match_info["id"]
     stream = _audio_streams.get(turn_id)
     if not stream:
+        log.warning("turn-audio %s: stream missing (404) — client requested expired/unknown id", turn_id)
+        _diag_log(_diag_audio, turn_id=turn_id, status="404_missing")
         raise web.HTTPNotFound()
+    t0 = time.monotonic()
+    first_byte_at: float | None = None
+    total_bytes = 0
+    chunks = 0
+    client_ua = request.headers.get("User-Agent", "?")[:80]
     resp = web.StreamResponse(
         status=200,
         headers={
@@ -932,15 +965,39 @@ async def handle_turn_audio(request: web.Request) -> web.StreamResponse:
             "Cache-Control": "no-cache, no-store",
             "X-Accel-Buffering": "no",  # disable proxy buffering (Render etc)
             "Access-Control-Allow-Origin": "*",
+            "Connection": "close",       # avoid keep-alive races on chunked
         },
     )
     await resp.prepare(request)
+    log.info("turn-audio %s: stream OPENED ua=%s", turn_id, client_ua)
+    _diag_log(_diag_audio, turn_id=turn_id, status="opened", ua=client_ua)
+    outcome = "completed"
     try:
         async for chunk in stream.read():
+            if first_byte_at is None:
+                first_byte_at = time.monotonic()
+                ttfb_ms = int((first_byte_at - t0) * 1000)
+                log.info("turn-audio %s: FIRST BYTE after %dms", turn_id, ttfb_ms)
+                _diag_log(_diag_audio, turn_id=turn_id, status="first_byte", ttfb_ms=ttfb_ms)
+            total_bytes += len(chunk)
+            chunks += 1
             await resp.write(chunk)
         await resp.write_eof()
     except (ConnectionResetError, asyncio.CancelledError):
-        pass
+        outcome = "client_disconnected"
+    except Exception as e:
+        outcome = f"error:{type(e).__name__}"
+        log.exception("turn-audio %s: unexpected error", turn_id)
+    finally:
+        total_ms = int((time.monotonic() - t0) * 1000)
+        ttfb_ms = int((first_byte_at - t0) * 1000) if first_byte_at else None
+        log.info(
+            "turn-audio %s: CLOSED outcome=%s bytes=%d chunks=%d ttfb_ms=%s total_ms=%d",
+            turn_id, outcome, total_bytes, chunks, ttfb_ms, total_ms,
+        )
+        _diag_log(_diag_audio, turn_id=turn_id, status=outcome,
+                  bytes=total_bytes, chunks=chunks,
+                  ttfb_ms=ttfb_ms, total_ms=total_ms)
     return resp
 
 
@@ -957,6 +1014,71 @@ async def handle_avatar(request: web.Request) -> web.FileResponse:
             return web.FileResponse(path, headers={"Cache-Control": "public, max-age=300"})
     raise web.HTTPNotFound()
 
+
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic endpoints — inspect runtime state without restarting / redeploying
+# ---------------------------------------------------------------------------
+
+async def handle_diag_state(request: web.Request) -> web.Response:
+    """Return a JSON snapshot of server-side audio + chain diagnostics."""
+    chain_state = "idle"
+    if _chain_task and not _chain_task.done():
+        chain_state = "running"
+    elif _chain_task and _chain_task.done():
+        chain_state = "finished"
+    return web.json_response({
+        "version": {"commit": VERSION_FULL, "short": VERSION_SHORT, "started_at": STARTED_AT},
+        "now": time.time(),
+        "chain_state": chain_state,
+        "active_audio_streams": [
+            {"id": tid, "complete": s.complete, "cancelled": s.cancelled, "chunks": len(s.chunks)}
+            for tid, s in _audio_streams.items()
+        ],
+        "transcript_len": len(_transcript),
+        "subscribers": len(_subscribers),
+        "events_log_len": len(_events_log),
+        "recent_audio": list(_diag_audio)[-30:],
+        "recent_chain": list(_diag_chain)[-30:],
+        "recent_eleven": list(_diag_eleven)[-30:],
+    }, headers={"Cache-Control": "no-store", "Access-Control-Allow-Origin": "*"})
+
+
+async def handle_diag_audio_test(request: web.Request) -> web.Response:
+    """Return a 0.5s 440Hz sine wave as a known-good audio playback positive control.
+
+    If the browser can play /diag/audio-test but not /turn-audio/<id>, the bug is
+    isolated to the chunked-transfer path or the page's persistent <audio> wiring.
+    """
+    import math, struct
+    sr = 22050
+    duration = 0.6
+    freq = 440
+    n_samples = int(sr * duration)
+    body = bytearray()
+    # 50ms fade in/out to avoid click
+    fade = int(sr * 0.05)
+    for i in range(n_samples):
+        env = 1.0
+        if i < fade: env = i / fade
+        elif i > n_samples - fade: env = (n_samples - i) / fade
+        sample = int(0.3 * env * 32767 * math.sin(2 * math.pi * freq * i / sr))
+        body.extend(struct.pack("<h", sample))
+    header = (
+        b"RIFF" + struct.pack("<I", 36 + len(body)) + b"WAVEfmt "
+        + struct.pack("<IHHIIHH", 16, 1, 1, sr, sr * 2, 2, 16)
+        + b"data" + struct.pack("<I", len(body))
+    )
+    wav = bytes(header) + bytes(body)
+    return web.Response(
+        body=wav,
+        headers={
+            "Content-Type": "audio/wav",
+            "Cache-Control": "no-store",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
 
 _gc_task: asyncio.Task | None = None
 
@@ -989,6 +1111,8 @@ def make_app() -> web.Application:
     app.router.add_post("/personas/{key}/enabled", handle_persona_enabled)
     app.router.add_post("/interrupt", handle_interrupt)
     app.router.add_post("/stt", handle_stt)
+    app.router.add_get("/diag/state", handle_diag_state)
+    app.router.add_get("/diag/audio-test", handle_diag_audio_test)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     return app
