@@ -1406,6 +1406,181 @@ async function loadVersion(){
   openEventStream();
   inputEl.focus();
 })();
+
+/* =========================================================================
+ * DEBUG HUD — activates only when URL has ?debug=1
+ * Self-contained: polls /diag/state, mirrors console, attaches to <audio>
+ * elements, runs positive-control tests. Never throws into the main page.
+ * ========================================================================= */
+(function maybeInstallHUD(){
+  if (!new URLSearchParams(location.search).has('debug')) return;
+  if (document.getElementById('__hud')) return;
+
+  const HUD = document.createElement('div');
+  HUD.id = '__hud';
+  HUD.style.cssText = `
+    position:fixed;top:8px;right:8px;width:420px;max-height:94vh;overflow-y:auto;
+    background:rgba(0,0,0,.9);color:#0f0;font:11px/1.4 SF Mono,Menlo,monospace;
+    padding:10px;border:1px solid #0f0;border-radius:6px;z-index:99999;
+    white-space:pre-wrap;pointer-events:auto;box-shadow:0 4px 20px rgba(0,0,0,.6);`;
+  document.body.appendChild(HUD);
+
+  const buf = { console: [], audioEvents: [], sse: [], net: [] };
+  const cap = (a, line, max) => { a.push(`${(performance.now()/1000).toFixed(1)}s ${line}`); while (a.length > max) a.shift(); };
+
+  /* console mirror */
+  ['log','warn','error','info'].forEach(k => {
+    const orig = console[k];
+    console[k] = function(...args){
+      try {
+        const s = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+        cap(buf.console, `${k}: ${s.substring(0, 220)}`, 100);
+      } catch(_){}
+      orig.apply(console, args);
+    };
+  });
+
+  /* attach to <audio> elements (existing + future) */
+  const AE = ['loadstart','loadeddata','canplay','play','playing','pause','ended','error','stalled','waiting','suspend','abort','emptied'];
+  function attach(a, label){
+    if (a.__hud) return; a.__hud = true;
+    AE.forEach(evName => a.addEventListener(evName, () => {
+      const errCode = a.error ? a.error.code : null;
+      cap(buf.audioEvents,
+        `${label} ${evName}${errCode!=null?` err=${errCode}`:''} rs=${a.readyState} ns=${a.networkState} t=${a.currentTime.toFixed(1)} src=${(a.currentSrc||'').slice(-44)}`,
+        40);
+    }));
+  }
+  document.querySelectorAll('audio').forEach((a,i) => attach(a, `audio[${i}]`));
+  const _origAppend = HTMLElement.prototype.appendChild;
+  HTMLElement.prototype.appendChild = function(child){
+    const r = _origAppend.call(this, child);
+    if (child && child.tagName === 'AUDIO') attach(child, 'audio[new]');
+    return r;
+  };
+
+  /* shadow SSE listener (so we observe events independently of the page) */
+  let lastTurnUrl = null;
+  try {
+    const shadow = new EventSource('/events');
+    shadow.onmessage = (m) => {
+      try {
+        const e = JSON.parse(m.data);
+        const tag = `SSE ${e.type}${e.speaker?` ${e.speaker}`:''}${e.audio_url?` url=${e.audio_url.slice(-22)}`:''}`;
+        cap(buf.sse, tag, 25);
+        if (e.type === 'turn_start' && e.audio_url) lastTurnUrl = e.audio_url;
+      } catch(_){}
+    };
+    shadow.onerror = () => cap(buf.sse, 'SSE error/reconnect', 25);
+  } catch(e) { cap(buf.console, `shadow SSE failed: ${e.message}`, 100); }
+
+  /* periodic /diag/state poll */
+  let lastServer = null;
+  async function pollServer(){
+    try {
+      const r = await fetch('/diag/state', { cache: 'no-store' });
+      lastServer = await r.json();
+    } catch(e) {
+      lastServer = { error: e.message };
+    }
+  }
+  setInterval(pollServer, 1500);
+  pollServer();
+
+  /* test buttons */
+  const btnBar = document.createElement('div');
+  btnBar.style.cssText = 'margin-top:10px;display:flex;flex-wrap:wrap;gap:4px;';
+  const mkBtn = (label, fn) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'background:#0f0;color:#000;border:0;padding:4px 8px;font:11px monospace;cursor:pointer;border-radius:3px;';
+    b.onclick = fn; return b;
+  };
+
+  btnBar.appendChild(mkBtn('▶ play last URL', async () => {
+    if (!lastTurnUrl) { cap(buf.console, 'no turn URL captured yet — send a turn first', 100); return; }
+    cap(buf.console, `direct play: ${lastTurnUrl}`, 100);
+    const a = new Audio(lastTurnUrl);
+    attach(a, 'audio[test-direct]');
+    a.volume = 1.0; a.muted = false;
+    try { await a.play(); cap(buf.console, 'play() resolved', 100); }
+    catch(e) { cap(buf.console, `play() REJECTED: ${e.name} — ${e.message}`, 100); }
+  }));
+
+  btnBar.appendChild(mkBtn('🔊 fetch bytes', async () => {
+    if (!lastTurnUrl) { cap(buf.console, 'no turn URL', 100); return; }
+    const t0 = performance.now();
+    try {
+      const r = await fetch(lastTurnUrl, { cache: 'no-store' });
+      const t1 = performance.now();
+      const ab = await r.arrayBuffer();
+      const t2 = performance.now();
+      cap(buf.net,
+        `GET ${lastTurnUrl.slice(-20)} → ${r.status} ct=${r.headers.get('content-type')} hdr=${(t1-t0)|0}ms body=${(t2-t1)|0}ms bytes=${ab.byteLength}`,
+        15);
+    } catch(e) { cap(buf.net, `fetch failed: ${e.message}`, 15); }
+  }));
+
+  btnBar.appendChild(mkBtn('🔔 beep', async () => {
+    try {
+      const ctx = new (window.AudioContext||window.webkitAudioContext)();
+      if (ctx.state === 'suspended') await ctx.resume();
+      const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.frequency.value = 660; g.gain.value = 0.15;
+      o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.25);
+      cap(buf.console, `beep fired ctx=${ctx.state}`, 100);
+    } catch(e) { cap(buf.console, `beep failed: ${e.message}`, 100); }
+  }));
+
+  btnBar.appendChild(mkBtn('⚡ /diag/audio-test', async () => {
+    cap(buf.console, 'positive control: /diag/audio-test', 100);
+    const a = new Audio('/diag/audio-test?t=' + Date.now());
+    attach(a, 'audio[diag-test]');
+    a.volume = 1.0; a.muted = false;
+    try { await a.play(); cap(buf.console, 'diag-test play() resolved', 100); }
+    catch(e) { cap(buf.console, `diag-test play() REJECTED: ${e.name} — ${e.message}`, 100); }
+  }));
+
+  btnBar.appendChild(mkBtn('🎯 inspect', () => {
+    const audios = Array.from(document.querySelectorAll('audio'));
+    cap(buf.console, `audio elements: ${audios.length}`, 100);
+    audios.forEach((a,i) => cap(buf.console,
+      `[${i}] paused=${a.paused} muted=${a.muted} vol=${a.volume} rs=${a.readyState} ns=${a.networkState} err=${a.error?a.error.code:'-'} src=${(a.currentSrc||'').slice(-50)}`, 100));
+  }));
+
+  /* render loop */
+  const body = document.createElement('div');
+  HUD.appendChild(body);
+  HUD.appendChild(btnBar);
+  function render(){
+    const audios = Array.from(document.querySelectorAll('audio')).filter(a => !a.id || a.id.indexOf('__') !== 0);
+    const audioBlock = audios.length === 0
+      ? '(no <audio> elements yet)'
+      : audios.map((a,i) =>
+        `[${i}] paused=${a.paused} muted=${a.muted} vol=${a.volume.toFixed(1)} rs=${a.readyState} ns=${a.networkState} err=${a.error?a.error.code:'-'}\n     src=${(a.currentSrc||'').slice(-66)}`
+      ).join('\n');
+    const server = lastServer ? (lastServer.error ? `(poll error: ${lastServer.error})` :
+      `chain=${lastServer.chain_state} streams=${lastServer.active_audio_streams.length} subs=${lastServer.subscribers}\n` +
+      `recent_audio (${lastServer.recent_audio.length}):\n` +
+      lastServer.recent_audio.slice(-6).map(a => `  ${a.turn_id?a.turn_id.slice(0,8):'-'} ${a.status}${a.ttfb_ms!=null?` ttfb=${a.ttfb_ms}ms`:''}${a.bytes!=null?` b=${a.bytes}`:''}${a.total_ms!=null?` t=${a.total_ms}ms`:''}`).join('\n') +
+      `\nrecent_chain (${lastServer.recent_chain.length}):\n` +
+      lastServer.recent_chain.slice(-6).map(c => `  ${c.kind} ${c.who||''} ${c.id?c.id.slice(0,8):''} ${c.reply_chars!=null?`(${c.reply_chars}c)`:''}`).join('\n') +
+      (lastServer.recent_eleven.length ? `\nrecent_eleven errors:\n` +
+        lastServer.recent_eleven.slice(-3).map(e => `  ${e.persona}: ${e.error}`).join('\n') : '')
+    ) : '(no server poll yet)';
+
+    body.textContent =
+      `=== SERVER /diag/state ===\n${server}\n\n` +
+      `=== CLIENT <audio> (${audios.length}) ===\n${audioBlock}\n\n` +
+      `=== AUDIO EVENTS (${buf.audioEvents.length}) ===\n${buf.audioEvents.slice(-10).join('\n')}\n\n` +
+      `=== SSE (${buf.sse.length}) ===\n${buf.sse.slice(-8).join('\n')}\n\n` +
+      `=== NET ===\n${buf.net.slice(-4).join('\n')}\n\n` +
+      `=== CONSOLE (${buf.console.length}) ===\n${buf.console.slice(-12).join('\n')}`;
+  }
+  setInterval(render, 300);
+  render();
+  cap(buf.console, 'HUD installed (?debug=1)', 100);
+})();
 </script>
 </body>
 </html>
