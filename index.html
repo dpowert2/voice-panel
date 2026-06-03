@@ -31,13 +31,17 @@
     text-transform:uppercase;}
   header .sub{color:var(--mute);font-size:12px;display:flex;align-items:center;gap:8px}
 
-  /* TTS provider toggle pill — sits next to .version in the header */
-  .tts-toggle{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--mute);
-    background:var(--panel);padding:2px 7px;border-radius:4px;border:1px solid var(--line);
-    cursor:pointer;letter-spacing:.3px;font-weight:600;user-select:none;}
-  .tts-toggle:hover{border-color:var(--mute);color:var(--text);}
-  .tts-toggle[data-provider="cartesia"]{color:var(--sam);border-color:rgba(167,224,184,.4);}
-  .tts-toggle[data-busy="1"]{opacity:.5;cursor:wait;}
+  /* TTS mode radio group — sits next to .version in the header */
+  .tts-modes{border:1px solid var(--line);background:var(--panel);border-radius:6px;
+    padding:1px;margin:0;display:inline-flex;font-family:"SF Mono",Menlo,monospace;}
+  .tts-modes label{display:inline-block;cursor:pointer;padding:2px 8px;border-radius:4px;
+    font-size:11px;color:var(--mute);font-weight:600;letter-spacing:.3px;user-select:none;
+    transition:background .12s ease,color .12s ease;}
+  .tts-modes label:hover{color:var(--text);}
+  .tts-modes input[type="radio"]{position:absolute;opacity:0;pointer-events:none;}
+  .tts-modes input[type="radio"]:checked + span{}
+  .tts-modes label:has(input:checked){background:var(--vale);color:#0b0d10;}
+  .tts-modes[data-busy="1"]{opacity:.5;pointer-events:none;}
   header .version{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--mute);
     background:var(--panel);padding:2px 7px;border-radius:4px;border:1px solid var(--line);
     cursor:help;letter-spacing:.3px;}
@@ -305,7 +309,11 @@
       <div class="sub">
         <span class="pulse"></span><span id="conn">connecting…</span>
         <span class="version" id="version" title="loading…">…</span>
-        <button class="tts-toggle" id="tts-toggle" type="button" title="Switch TTS provider (server-side, applies to next turn)">…</button>
+        <fieldset class="tts-modes" id="tts-modes" title="Which TTS pipeline drives the panel">
+          <label><input type="radio" name="tts-mode" value="elevenlabs"><span>11labs</span></label>
+          <label><input type="radio" name="tts-mode" value="cartesia"><span>cartesia</span></label>
+          <label><input type="radio" name="tts-mode" value="cartesia-agents"><span>agents</span></label>
+        </fieldset>
       </div>
     </header>
 
@@ -481,6 +489,7 @@ async function loadPersonas(){
   PERSONAS = await r.json();
   gridEl.innerHTML = ""; youRow.innerHTML = "";
   for (const key of Object.keys(PERSONAS)){
+    if (PERSONAS[key].enabled === false) continue;  // hidden in this mode
     renderTile(key, PERSONAS[key], gridEl, { badAct: false });
   }
   renderTile("you", { name: "You" }, youRow);
@@ -1409,27 +1418,26 @@ async function loadVersion(){
 }
 
 
-/* ---- TTS provider toggle (header pill) ----------------------- */
+/* ---- TTS mode radio group (header) --------------------------- */
 async function loadTtsProvider(){
   try {
     const r = await fetch("/tts/provider", { cache: "no-store" });
     const d = await r.json();
-    const el = document.getElementById("tts-toggle");
-    if (!el) return;
-    el.textContent = d.provider === "cartesia" ? "cartesia" : "11labs";
-    el.dataset.provider = d.provider;
-    el.title = d.cartesia_configured
-      ? `TTS: ${d.provider} — click to swap. Cartesia API key is configured server-side.`
-      : `TTS: ${d.provider} — click to swap. Cartesia API key NOT configured: set CARTESIA_API_KEY in Render env first.`;
+    const group = document.getElementById("tts-modes");
+    if (!group) return;
+    const inputs = group.querySelectorAll('input[name="tts-mode"]');
+    inputs.forEach(i => { i.checked = (i.value === d.provider); });
+    group.title = d.cartesia_configured
+      ? `TTS pipeline: ${d.provider}. cartesia is configured. Switch with the radios.`
+      : `TTS pipeline: ${d.provider}. CARTESIA_API_KEY NOT set — only 11labs will work.`;
   } catch(e){ console.warn("tts provider load failed", e); }
 }
 
-document.getElementById("tts-toggle")?.addEventListener("click", async (ev) => {
-  const el = ev.currentTarget;
-  if (el.dataset.busy === "1") return;
-  const cur = el.dataset.provider || "elevenlabs";
-  const next = cur === "cartesia" ? "elevenlabs" : "cartesia";
-  el.dataset.busy = "1";
+async function setTtsProvider(next){
+  const group = document.getElementById("tts-modes");
+  if (!group) return;
+  if (group.dataset.busy === "1") return;
+  group.dataset.busy = "1";
   try {
     const r = await fetch("/tts/provider", {
       method: "POST",
@@ -1438,13 +1446,26 @@ document.getElementById("tts-toggle")?.addEventListener("click", async (ev) => {
     });
     if (!r.ok){
       const err = await r.json().catch(() => ({}));
-      alert(`TTS toggle failed: ${err.error || r.status}`);
+      alert(`Mode switch failed: ${err.error || r.status}`);
+      await loadTtsProvider();  // revert UI to current server state
+      return;
     }
+    // Mode change implies a different persona set is enabled on the server.
+    // Re-fetch /personas and rebuild the tile grid so the UI matches.
+    await loadPersonas();
+    await loadRecord();
   } catch(e){
-    alert("TTS toggle network failed: " + e.message);
-  } finally {
-    el.dataset.busy = "";
+    alert("Mode switch network failed: " + e.message);
     await loadTtsProvider();
+  } finally {
+    group.dataset.busy = "";
+    await loadTtsProvider();
+  }
+}
+
+document.getElementById("tts-modes")?.addEventListener("change", (ev) => {
+  if (ev.target && ev.target.name === "tts-mode") {
+    setTtsProvider(ev.target.value);
   }
 });
 
