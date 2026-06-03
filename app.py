@@ -213,12 +213,17 @@ class AudioStream:
     Producer pushes chunks (and finally None for EOS). Reader awaits chunks
     in order. If the reader connects late, it gets all buffered chunks
     first, then waits for new ones. Single consumer model — re-fetching
-    the same /turn-audio/<id> twice is not supported."""
+    the same /turn-audio/<id> twice is not supported.
 
-    def __init__(self) -> None:
+    `mime` is the Content-Type for the eventual /turn-audio HTTP response.
+    ElevenLabs streams produce audio/mpeg; Cartesia raw-PCM streams produce
+    audio/wav (with a streaming WAV header pushed as the first chunk)."""
+
+    def __init__(self, mime: str = "audio/mpeg") -> None:
         self.chunks: list[bytes] = []
         self.complete = False
         self.cancelled = False
+        self.mime = mime
         self._signal = asyncio.Event()
 
     async def push(self, chunk: bytes | None) -> None:
@@ -395,58 +400,145 @@ async def _eleven_stream_input(
 
 
 # ---------------------------------------------------------------------------
-# Cartesia TTS — REST /tts/bytes endpoint (mp3 output, chunked transfer)
+# Cartesia TTS — WebSocket streaming (raw PCM → streaming WAV)
 # ---------------------------------------------------------------------------
-# Tradeoff vs the ElevenLabs WS path: Cartesia REST takes the full transcript,
-# so this function waits for the LLM to finish the turn before requesting
-# audio. First-byte latency is ~300-500ms after the POST resolves; total
-# perceived latency adds ~500-800ms vs ElevenLabs Flash streaming. Sonic-3
-# audio quality is excellent; this is purely a streaming-pipeline tradeoff.
-# Migrate to Cartesia WS (raw PCM with streaming WAV header) for parity later.
+# Symmetric to the ElevenLabs WS path. LLM tokens flow in as Cartesia
+# `continue: true` continuation messages on a shared context_id, audio chunks
+# (base64-encoded raw 16-bit mono PCM @ 24kHz) flow back, and we yield them
+# to the caller prepended by a streaming WAV header so a plain <audio>
+# element can decode them progressively over chunked transfer-encoding.
 
-CARTESIA_URL = "https://api.cartesia.ai/tts/bytes"
-CARTESIA_MODEL = "sonic-3"
-CARTESIA_VERSION = "2026-03-01"
+CARTESIA_WS_URL = "wss://api.cartesia.ai/tts/websocket?cartesia_version=2026-03-01"
+CARTESIA_WS_MODEL = "sonic-3"
+CARTESIA_SAMPLE_RATE = 24000  # 24 kHz mono 16-bit PCM
 
 
-async def _cartesia_tts_http(persona, text: str) -> AsyncIterator[bytes]:
-    """POST to Cartesia /tts/bytes with the full reply text, yield mp3 chunks
-    as the response streams in. Logs errors into _diag_eleven (reused bucket).
-    Yields nothing on failure — caller treats empty as "no audio for this turn"."""
+def _streaming_wav_header(sample_rate: int = CARTESIA_SAMPLE_RATE) -> bytes:
+    """44-byte RIFF/WAVE header with size fields set to 0xFFFFFFFF — tells the
+    browser the stream length is unknown so it keeps playing until the
+    connection closes. Mono 16-bit PCM little-endian."""
+    import struct
+    byte_rate = sample_rate * 1 * 16 // 8   # mono, 16 bits per sample
+    block_align = 1 * 16 // 8
+    return (
+        b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVE"
+        + b"fmt " + struct.pack("<IHHIIHH",
+                                 16,            # PCM fmt chunk size
+                                 1,             # AudioFormat = PCM
+                                 1,             # NumChannels = 1 (mono)
+                                 sample_rate,
+                                 byte_rate,
+                                 block_align,
+                                 16)            # BitsPerSample
+        + b"data" + struct.pack("<I", 0xFFFFFFFE)
+    )
+
+
+async def _cartesia_stream_input(
+    persona, text_iter: AsyncIterator[str]
+) -> AsyncIterator[bytes]:
+    """Open a Cartesia WebSocket and stream LLM tokens in via continuation
+    messages (same context_id, `continue: true`). Yield raw PCM bytes back to
+    the caller, prepended with a streaming WAV header on the first chunk.
+
+    Symmetric to _eleven_stream_input — both providers expose a true
+    bidirectional streaming pipeline so the chain runner does not branch on
+    "REST collects full text first" anymore.
+    """
     if not CARTESIA_API_KEY:
         _diag_log(_diag_eleven, persona=persona.key, error="cartesia: CARTESIA_API_KEY not set")
         log.warning("Cartesia selected but CARTESIA_API_KEY is missing")
         return
-    if not text or not text.strip():
-        return
-    headers = {
-        "X-API-Key": CARTESIA_API_KEY,
-        "Cartesia-Version": CARTESIA_VERSION,
-        "Content-Type": "application/json",
+
+    context_id = secrets.token_hex(8)
+    voice = {"mode": "id", "id": persona.cartesia_voice_id}
+    output_format = {
+        "container": "raw",
+        "encoding": "pcm_s16le",
+        "sample_rate": CARTESIA_SAMPLE_RATE,
     }
-    payload = {
-        "model_id": CARTESIA_MODEL,
-        "transcript": text,
-        "voice": {"mode": "id", "id": persona.cartesia_voice_id},
-        "language": "en",
-        "output_format": {
-            "container": "mp3",
-            "sample_rate": 44100,
-            "bit_rate": 128000,
-        },
-    }
+
+    def _gen(transcript: str, cont: bool) -> str:
+        return json.dumps({
+            "model_id": CARTESIA_WS_MODEL,
+            "transcript": transcript,
+            "voice": voice,
+            "language": "en",
+            "context_id": context_id,
+            "output_format": output_format,
+            "continue": cont,
+            "max_buffer_delay_ms": 0,   # disable Cartesia's 3s default buffer
+        })
+
+    headers = {"X-API-Key": CARTESIA_API_KEY}
+    header_emitted = False
+
     try:
-        async with _http.post(CARTESIA_URL, json=payload, headers=headers) as r:
-            if r.status != 200:
-                body = await r.text()
-                log.warning("Cartesia TTS HTTP %d for %s: %s", r.status, persona.key, body[:400])
-                _diag_log(_diag_eleven, persona=persona.key,
-                          error=f"cartesia http {r.status}: {body[:200]}")
-                return
-            async for chunk in r.content.iter_chunked(4096):
-                yield chunk
+        async with _http.ws_connect(
+            CARTESIA_WS_URL, headers=headers, heartbeat=20,
+        ) as ws:
+            # Prime the context with an empty initial transcript.
+            await ws.send_str(_gen("", True))
+
+            async def send_tokens() -> None:
+                try:
+                    async for tok in text_iter:
+                        if not tok:
+                            continue
+                        await ws.send_str(_gen(tok, True))
+                    # EOS: empty transcript + continue:false flushes & closes ctx.
+                    await ws.send_str(_gen("", False))
+                except Exception:
+                    log.exception("cartesia send_tokens failed")
+
+            producer = asyncio.create_task(send_tokens())
+            try:
+                async for msg in ws:
+                    if msg.type != aiohttp.WSMsgType.TEXT:
+                        if msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSED):
+                            log.warning("cartesia WS closed: %s", ws.exception())
+                            break
+                        continue
+                    try:
+                        ev = json.loads(msg.data)
+                    except json.JSONDecodeError:
+                        continue
+                    ev_type = ev.get("type")
+                    if ev_type == "error":
+                        log.warning(
+                            "cartesia WS error for %s: code=%s msg=%s",
+                            persona.key, ev.get("error_code"), ev.get("message", "")[:200],
+                        )
+                        _diag_log(
+                            _diag_eleven, persona=persona.key,
+                            error=f"cartesia {ev.get('error_code')}: {str(ev.get('message',''))[:200]}",
+                        )
+                        break
+                    if ev_type == "chunk":
+                        b64 = ev.get("data")
+                        if not b64:
+                            continue
+                        try:
+                            pcm = base64.b64decode(b64)
+                        except Exception:
+                            log.exception("cartesia bad audio chunk")
+                            continue
+                        if not header_emitted:
+                            header_emitted = True
+                            yield _streaming_wav_header()
+                        yield pcm
+                    elif ev_type == "done" and ev.get("done"):
+                        break
+                    # ignore flush_done, timestamps, etc.
+            finally:
+                if not producer.done():
+                    producer.cancel()
+                    try:
+                        await producer
+                    except (asyncio.CancelledError, Exception):
+                        pass
     except Exception as e:
-        log.exception("Cartesia TTS failed for %s", persona.key)
+        log.exception("cartesia WS connect failed for %s", persona.key)
         _diag_log(_diag_eleven, persona=persona.key, error=f"cartesia exception: {e}")
 
 
@@ -461,23 +553,19 @@ async def _stream_tts(
     """Pipe LLM tokens through the chosen TTS provider, yield audio bytes,
     fill text_buf with each token so the caller can reconstruct reply_text.
 
-    - elevenlabs: WebSocket stream-input — true streaming, lowest TTFA.
-    - cartesia:   collect full text first, then REST POST, stream the response.
+    Both providers now expose true bidirectional streaming: tokens flow
+    LLM → TTS as they arrive; audio bytes flow back the moment the provider
+    produces them. No "collect-then-call" branch.
     """
-    if provider == "cartesia":
+    async def _text_source():
         async for tok in anthropic_iter:
             text_buf.append(tok)
-        full_text = _strip_name_prefix("".join(text_buf), persona).strip()
-        if not full_text:
-            return
-        async for chunk in _cartesia_tts_http(persona, full_text):
+            yield tok
+
+    if provider == "cartesia":
+        async for chunk in _cartesia_stream_input(persona, _text_source()):
             yield chunk
     else:
-        # elevenlabs (default) — true bidirectional streaming
-        async def _text_source():
-            async for tok in anthropic_iter:
-                text_buf.append(tok)
-                yield tok
         async for chunk in _eleven_stream_input(persona, _text_source()):
             yield chunk
 
@@ -754,7 +842,12 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
 
             persona = PERSONAS[who]
             turn_id = secrets.token_hex(8)
-            stream = AudioStream()
+            # Snapshot provider here so the AudioStream's mime matches the
+            # actual TTS path we'll take for this turn.
+            provider_for_turn = _tts_provider
+            stream = AudioStream(
+                mime="audio/wav" if provider_for_turn == "cartesia" else "audio/mpeg"
+            )
             _audio_streams[turn_id] = stream
             text_buf: list[str] = []
 
@@ -775,8 +868,6 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
             # the main chain progress.
             asyncio.create_task(_maybe_react(who, transcript_ctx, turn_id))
 
-            # Snapshot provider at turn start so a mid-turn toggle is safe.
-            provider_for_turn = _tts_provider
             _diag_log(_diag_chain, kind="tts_provider", id=turn_id, who=persona.key, provider=provider_for_turn)
 
             try:
@@ -1058,7 +1149,7 @@ async def handle_turn_audio(request: web.Request) -> web.StreamResponse:
     resp = web.StreamResponse(
         status=200,
         headers={
-            "Content-Type": "audio/mpeg",
+            "Content-Type": stream.mime,   # audio/mpeg for elevenlabs, audio/wav for cartesia
             "Cache-Control": "no-cache, no-store",
             "X-Accel-Buffering": "no",  # disable proxy buffering (Render etc)
             "Access-Control-Allow-Origin": "*",
