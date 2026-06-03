@@ -8,8 +8,8 @@ voices are what make a multi-agent panel feel like a panel.
 the detection team. Keep it bounded and obviously fictional.
 
 VOICE IDS: ElevenLabs default voices (voice_id) + Cartesia voice IDs
-(cartesia_voice_id) for the runtime provider toggle. Cartesia placeholders
-are ONE shared default — swap from play.cartesia.ai for true distinct voices.
+(cartesia_voice_id) for the runtime provider toggle. Each persona now has a gender-matched, role-appropriate Cartesia voice
+picked from play.cartesia.ai (Mae/Skylar/Corey/Alistair/Somchai).
 ElevenLabs default voices (available on every account). Picked
 for maximum aural distinctness across accent and gender.
   - Rachel  21m00Tcm4TlvDq8ikWAM — calm, narrator-like female (US)
@@ -32,7 +32,7 @@ class Persona:
     # Cartesia voice id (for the runtime TTS provider toggle).
     # Default = "Newsman" (Cartesia's library). Swap per persona from
     # https://play.cartesia.ai once you've picked five distinct voices.
-    cartesia_voice_id: str = "f786b574-daa5-4673-aa0c-cbe3e8534c02"
+    cartesia_voice_id: str = "6d14ac2a-4dda-46f8-bd6f-0722db08ec00"
     is_bad_actor: bool = False
 
 
@@ -62,7 +62,7 @@ PERSONAS: dict[str, Persona] = {
         key="vale",
         name="Dr. Vale",
         voice_id="21m00Tcm4TlvDq8ikWAM",  # Rachel — calm female, doctor-like
-        cartesia_voice_id="f786b574-daa5-4673-aa0c-cbe3e8534c02",
+        cartesia_voice_id="6d14ac2a-4dda-46f8-bd6f-0722db08ec00",
         system_prompt=(
             "You are Dr. Vale, a calm, careful GP on a panel helping someone who "
             "feels unwell. Ask one clarifying question at a time, reason briefly "
@@ -76,7 +76,7 @@ PERSONAS: dict[str, Persona] = {
         key="pri",
         name="Pri",
         voice_id="EXAVITQu4vr4xnSDxMaL",  # Bella — warm female, pharmacist-like
-        cartesia_voice_id="e07c00bc-4134-4eae-9ea4-1a55fb45746b",
+        cartesia_voice_id="db6b0ed5-d5d3-463d-ae85-518a07d3c2b4",
         system_prompt=(
             "You are Pri, a practical community pharmacist on the panel. Focus on "
             "sensible over-the-counter options and when to escalate to a doctor. "
@@ -89,7 +89,7 @@ PERSONAS: dict[str, Persona] = {
         key="sam",
         name="Sam",
         voice_id="ErXwobaYiN019PkySvjV",  # Antoni — well-rounded male, coach-like
-        cartesia_voice_id="694f9389-aac1-45b6-b726-9d9369183238",
+        cartesia_voice_id="630ed21c-2c5c-41cf-9d82-10a7fd668370",
         system_prompt=(
             "You are Sam, a wellness and lifestyle coach on the panel. Offer "
             "holistic, supportive framing (rest, hydration, stress). Defer to the "
@@ -100,7 +100,7 @@ PERSONAS: dict[str, Persona] = {
         key="reed",
         name="Reed",
         voice_id="onwK4e9ZLuTAKqWW03F9",  # Daniel — sharp British male, lawyerly
-        cartesia_voice_id="a0e99841-438c-4a64-b679-ae501e7d6091",
+        cartesia_voice_id="c8f7835e-28a3-4f0c-80d7-c1302ac62aae",
         system_prompt=(
             "You are Reed, a US healthcare and consumer-protection attorney "
             "on this panel. You apply US law in real time AND you push the "
@@ -147,7 +147,7 @@ PERSONAS: dict[str, Persona] = {
         key="marcus",
         name="Marcus",
         voice_id="pNInz6obpgDQGcFmaJgB",  # Adam — confident, evangelical male
-        cartesia_voice_id="5345cf08-6f37-424d-a5d9-8ae1101b9377",
+        cartesia_voice_id="5de076e9-7b28-4442-b279-e7d80d573505",
         is_bad_actor=True,
         system_prompt=(
             "You are Marcus, an integrative-health expert and creator of "

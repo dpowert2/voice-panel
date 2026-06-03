@@ -1035,6 +1035,49 @@ async def handle_set_record(request: web.Request) -> web.Response:
     return web.json_response(merged)
 
 
+
+CARTESIA_STT_URL = "https://api.cartesia.ai/stt"
+CARTESIA_STT_MODEL = "ink-whisper"
+
+
+async def _cartesia_stt(audio_bytes: bytes, filename: str, content_type: str) -> str | None:
+    """POST the recorded audio blob to Cartesia /stt, return transcript text.
+
+    Returns None on any error (HTTP non-200, missing key, exception) so the
+    caller can fall through to the ElevenLabs Scribe path if it wants.
+    """
+    if not CARTESIA_API_KEY:
+        return None
+    headers = {
+        "Authorization": f"Bearer {CARTESIA_API_KEY}",
+        "Cartesia-Version": "2026-03-01",
+    }
+    form = aiohttp.FormData()
+    form.add_field("file", audio_bytes, filename=filename, content_type=content_type)
+    form.add_field("model", CARTESIA_STT_MODEL)
+    form.add_field("language", "en")
+    try:
+        async with _http.post(
+            CARTESIA_STT_URL, data=form, headers=headers,
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as r:
+            body = await r.text()
+            if r.status != 200:
+                log.warning("Cartesia STT %d: %s", r.status, body[:500])
+                _diag_log(_diag_eleven, persona="stt", error=f"cartesia stt {r.status}: {body[:200]}")
+                return None
+            result = json.loads(body)
+            return (result.get("text") or "").strip()
+    except asyncio.TimeoutError:
+        log.warning("Cartesia STT timeout")
+        _diag_log(_diag_eleven, persona="stt", error="cartesia stt timeout")
+        return None
+    except Exception as e:
+        log.exception("Cartesia STT call failed")
+        _diag_log(_diag_eleven, persona="stt", error=f"cartesia stt exception: {e}")
+        return None
+
+
 async def handle_stt(request: web.Request) -> web.Response:
     """Accept a recorded audio blob, transcribe via ElevenLabs Scribe.
 
@@ -1062,7 +1105,17 @@ async def handle_stt(request: web.Request) -> web.Response:
         # Too small to be a real utterance — likely a stray VAD trigger.
         return web.json_response({"text": "", "skipped": "too short"})
 
-    # Forward to ElevenLabs Scribe.
+    # Prefer Cartesia Ink-Whisper when configured (works regardless of
+    # ElevenLabs quota). Fall back to ElevenLabs Scribe only if Cartesia
+    # returns None (no key set, or error).
+    if CARTESIA_API_KEY:
+        text = await _cartesia_stt(audio_bytes, filename, content_type)
+        if text is not None:
+            log.info("cartesia stt → %r", text[:120])
+            return web.json_response({"text": text, "provider": "cartesia"})
+        # else: fall through to ElevenLabs
+
+    # ElevenLabs Scribe fallback.
     form = aiohttp.FormData()
     form.add_field("file", audio_bytes, filename=filename, content_type=content_type)
     form.add_field("model_id", "scribe_v1")
@@ -1093,7 +1146,7 @@ async def handle_stt(request: web.Request) -> web.Response:
 
     text = (result.get("text") or "").strip()
     log.info("scribe → %r", text[:120])
-    return web.json_response({"text": text})
+    return web.json_response({"text": text, "provider": "elevenlabs"})
 
 
 async def handle_interrupt(request: web.Request) -> web.Response:
