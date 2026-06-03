@@ -30,6 +30,14 @@
   header h1{margin:0;font-size:14px;font-weight:600;letter-spacing:.2px;color:var(--mute);
     text-transform:uppercase;}
   header .sub{color:var(--mute);font-size:12px;display:flex;align-items:center;gap:8px}
+
+  /* TTS provider toggle pill — sits next to .version in the header */
+  .tts-toggle{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--mute);
+    background:var(--panel);padding:2px 7px;border-radius:4px;border:1px solid var(--line);
+    cursor:pointer;letter-spacing:.3px;font-weight:600;user-select:none;}
+  .tts-toggle:hover{border-color:var(--mute);color:var(--text);}
+  .tts-toggle[data-provider="cartesia"]{color:var(--sam);border-color:rgba(167,224,184,.4);}
+  .tts-toggle[data-busy="1"]{opacity:.5;cursor:wait;}
   header .version{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--mute);
     background:var(--panel);padding:2px 7px;border-radius:4px;border:1px solid var(--line);
     cursor:help;letter-spacing:.3px;}
@@ -297,6 +305,7 @@
       <div class="sub">
         <span class="pulse"></span><span id="conn">connecting…</span>
         <span class="version" id="version" title="loading…">…</span>
+        <button class="tts-toggle" id="tts-toggle" type="button" title="Switch TTS provider (server-side, applies to next turn)">…</button>
       </div>
     </header>
 
@@ -1399,8 +1408,49 @@ async function loadVersion(){
   } catch(e){ console.warn("version fetch failed", e); }
 }
 
+
+/* ---- TTS provider toggle (header pill) ----------------------- */
+async function loadTtsProvider(){
+  try {
+    const r = await fetch("/tts/provider", { cache: "no-store" });
+    const d = await r.json();
+    const el = document.getElementById("tts-toggle");
+    if (!el) return;
+    el.textContent = d.provider === "cartesia" ? "cartesia" : "11labs";
+    el.dataset.provider = d.provider;
+    el.title = d.cartesia_configured
+      ? `TTS: ${d.provider} — click to swap. Cartesia API key is configured server-side.`
+      : `TTS: ${d.provider} — click to swap. Cartesia API key NOT configured: set CARTESIA_API_KEY in Render env first.`;
+  } catch(e){ console.warn("tts provider load failed", e); }
+}
+
+document.getElementById("tts-toggle")?.addEventListener("click", async (ev) => {
+  const el = ev.currentTarget;
+  if (el.dataset.busy === "1") return;
+  const cur = el.dataset.provider || "elevenlabs";
+  const next = cur === "cartesia" ? "elevenlabs" : "cartesia";
+  el.dataset.busy = "1";
+  try {
+    const r = await fetch("/tts/provider", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ provider: next }),
+    });
+    if (!r.ok){
+      const err = await r.json().catch(() => ({}));
+      alert(`TTS toggle failed: ${err.error || r.status}`);
+    }
+  } catch(e){
+    alert("TTS toggle network failed: " + e.message);
+  } finally {
+    el.dataset.busy = "";
+    await loadTtsProvider();
+  }
+});
+
 (async () => {
   await loadPersonas();
+  await loadTtsProvider();
   await loadRecord();   // fetch + render the patient record badge
   await loadVersion();  // show the running build's git SHA in the header
   openEventStream();
