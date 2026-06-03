@@ -56,6 +56,7 @@ log = logging.getLogger("voice-panel")
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ELEVEN_API_KEY = os.environ["ELEVEN_API_KEY"]
+CARTESIA_API_KEY = os.environ.get("CARTESIA_API_KEY", "")  # optional — only needed if provider toggled to cartesia
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
@@ -101,6 +102,11 @@ _events_log: list[dict] = []
 _subscribers: set[asyncio.Queue] = set()
 _http: ClientSession | None = None
 _chain_task: asyncio.Task | None = None
+
+# Runtime TTS provider toggle. Default elevenlabs; switchable via
+# POST /tts/provider {"provider": "cartesia"|"elevenlabs"}. Captured at
+# turn-start so a mid-turn switch never strands a half-streamed reply.
+_tts_provider: str = "elevenlabs"
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +391,95 @@ async def _eleven_stream_input(
                     await producer
                 except (asyncio.CancelledError, Exception):
                     pass
+
+
+
+# ---------------------------------------------------------------------------
+# Cartesia TTS — REST /tts/bytes endpoint (mp3 output, chunked transfer)
+# ---------------------------------------------------------------------------
+# Tradeoff vs the ElevenLabs WS path: Cartesia REST takes the full transcript,
+# so this function waits for the LLM to finish the turn before requesting
+# audio. First-byte latency is ~300-500ms after the POST resolves; total
+# perceived latency adds ~500-800ms vs ElevenLabs Flash streaming. Sonic-3
+# audio quality is excellent; this is purely a streaming-pipeline tradeoff.
+# Migrate to Cartesia WS (raw PCM with streaming WAV header) for parity later.
+
+CARTESIA_URL = "https://api.cartesia.ai/tts/bytes"
+CARTESIA_MODEL = "sonic-3"
+CARTESIA_VERSION = "2026-03-01"
+
+
+async def _cartesia_tts_http(persona, text: str) -> AsyncIterator[bytes]:
+    """POST to Cartesia /tts/bytes with the full reply text, yield mp3 chunks
+    as the response streams in. Logs errors into _diag_eleven (reused bucket).
+    Yields nothing on failure — caller treats empty as "no audio for this turn"."""
+    if not CARTESIA_API_KEY:
+        _diag_log(_diag_eleven, persona=persona.key, error="cartesia: CARTESIA_API_KEY not set")
+        log.warning("Cartesia selected but CARTESIA_API_KEY is missing")
+        return
+    if not text or not text.strip():
+        return
+    headers = {
+        "X-API-Key": CARTESIA_API_KEY,
+        "Cartesia-Version": CARTESIA_VERSION,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model_id": CARTESIA_MODEL,
+        "transcript": text,
+        "voice": {"mode": "id", "id": persona.cartesia_voice_id},
+        "language": "en",
+        "output_format": {
+            "container": "mp3",
+            "sample_rate": 44100,
+            "bit_rate": 128000,
+        },
+    }
+    try:
+        async with _http.post(CARTESIA_URL, json=payload, headers=headers) as r:
+            if r.status != 200:
+                body = await r.text()
+                log.warning("Cartesia TTS HTTP %d for %s: %s", r.status, persona.key, body[:400])
+                _diag_log(_diag_eleven, persona=persona.key,
+                          error=f"cartesia http {r.status}: {body[:200]}")
+                return
+            async for chunk in r.content.iter_chunked(4096):
+                yield chunk
+    except Exception as e:
+        log.exception("Cartesia TTS failed for %s", persona.key)
+        _diag_log(_diag_eleven, persona=persona.key, error=f"cartesia exception: {e}")
+
+
+# ---------------------------------------------------------------------------
+# TTS dispatcher — single entry point used by the chain runner
+# ---------------------------------------------------------------------------
+
+async def _stream_tts(
+    persona, anthropic_iter: AsyncIterator[str],
+    text_buf: list[str], provider: str,
+) -> AsyncIterator[bytes]:
+    """Pipe LLM tokens through the chosen TTS provider, yield audio bytes,
+    fill text_buf with each token so the caller can reconstruct reply_text.
+
+    - elevenlabs: WebSocket stream-input — true streaming, lowest TTFA.
+    - cartesia:   collect full text first, then REST POST, stream the response.
+    """
+    if provider == "cartesia":
+        async for tok in anthropic_iter:
+            text_buf.append(tok)
+        full_text = _strip_name_prefix("".join(text_buf), persona).strip()
+        if not full_text:
+            return
+        async for chunk in _cartesia_tts_http(persona, full_text):
+            yield chunk
+    else:
+        # elevenlabs (default) — true bidirectional streaming
+        async def _text_source():
+            async for tok in anthropic_iter:
+                text_buf.append(tok)
+                yield tok
+        async for chunk in _eleven_stream_input(persona, _text_source()):
+            yield chunk
 
 
 # ---------------------------------------------------------------------------
@@ -680,18 +775,20 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
             # the main chain progress.
             asyncio.create_task(_maybe_react(who, transcript_ctx, turn_id))
 
-            async def _text_source(buf: list[str]):
-                async for tok in _anthropic_stream(persona, transcript_ctx):
-                    buf.append(tok)
-                    yield tok
+            # Snapshot provider at turn start so a mid-turn toggle is safe.
+            provider_for_turn = _tts_provider
+            _diag_log(_diag_chain, kind="tts_provider", id=turn_id, who=persona.key, provider=provider_for_turn)
 
             try:
-                async for audio_chunk in _eleven_stream_input(
-                    persona, _text_source(text_buf)
+                async for audio_chunk in _stream_tts(
+                    persona,
+                    _anthropic_stream(persona, transcript_ctx),
+                    text_buf,
+                    provider_for_turn,
                 ):
                     await stream.push(audio_chunk)
             except Exception as e:
-                log.exception("streaming pipeline failed in chain turn %d", i)
+                log.exception("streaming pipeline failed in chain turn %d (%s)", i, provider_for_turn)
                 await _publish({"type": "error", "text": f"stream: {e}"})
             finally:
                 await stream.push(None)  # EOS — releases the HTTP handler
@@ -1080,6 +1177,37 @@ async def handle_diag_audio_test(request: web.Request) -> web.Response:
         },
     )
 
+
+async def handle_tts_provider_get(request: web.Request) -> web.Response:
+    return web.json_response({
+        "provider": _tts_provider,
+        "available": ["elevenlabs", "cartesia"],
+        "cartesia_configured": bool(CARTESIA_API_KEY),
+    })
+
+
+async def handle_tts_provider_set(request: web.Request) -> web.Response:
+    global _tts_provider
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid json"}, status=400)
+    p = (body.get("provider") or "").strip().lower()
+    if p not in ("elevenlabs", "cartesia"):
+        return web.json_response(
+            {"error": "provider must be 'elevenlabs' or 'cartesia'"},
+            status=400,
+        )
+    if p == "cartesia" and not CARTESIA_API_KEY:
+        return web.json_response(
+            {"error": "CARTESIA_API_KEY env var not set on the server. "
+                      "Set it in Render → Environment and redeploy."},
+            status=400,
+        )
+    _tts_provider = p
+    log.info("tts_provider switched → %s", p)
+    return web.json_response({"provider": _tts_provider})
+
 _gc_task: asyncio.Task | None = None
 
 
@@ -1113,6 +1241,8 @@ def make_app() -> web.Application:
     app.router.add_post("/stt", handle_stt)
     app.router.add_get("/diag/state", handle_diag_state)
     app.router.add_get("/diag/audio-test", handle_diag_audio_test)
+    app.router.add_get("/tts/provider", handle_tts_provider_get)
+    app.router.add_post("/tts/provider", handle_tts_provider_set)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     return app
