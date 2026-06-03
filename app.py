@@ -561,26 +561,47 @@ CARTESIA_AGENT_WS = "wss://api.cartesia.ai/agents/stream/{agent_id}"
 CARTESIA_AGENT_VERSION = "2025-04-16"
 # A short PCM blob of near-silence to trigger the agent's endpointing. We
 # build this once at module load. 16-bit mono PCM at 24kHz, 600ms.
-# Trailing silence after the speech seed; Cartesia's STT VAD needs to *hear*
-# silence in the audio stream to endpoint and consider the user "done talking".
-# 1.5 seconds at 24 kHz mono 16-bit s16le = 72000 bytes of zeros.
-_AGENT_SILENCE_PAD = b"\x00\x00" * (24000 * 3 // 2)
+# Cartesia's STT VAD endpoints on silence-in-the-audio-stream, not on
+# absence of new bytes. We need to *send* silence after the speech seed.
+# 0.6 s at 24 kHz mono 16-bit s16le = 28800 bytes of zeros.
+# (Reduced from 1.5 s — Cartesia's default endpointing fires within ~0.4 s.)
+_AGENT_SILENCE_PAD = b"\x00\x00" * (24000 * 6 // 10)
+
+# Cached seed PCM. Generated ONCE on first agent call (or at startup if
+# pre_warm_agent_seed is called). The seed audio just needs to trigger
+# VAD endpointing; the agent's LLM context comes entirely from the
+# system_prompt override, so the seed text content is irrelevant.
+_CACHED_SEED_PCM: bytes | None = None
+_SEED_PHRASE = "Go ahead."
+_SEED_VOICE_ID = "6d14ac2a-4dda-46f8-bd6f-0722db08ec00"  # Mae - neutral
 
 
-async def _cartesia_tts_pcm_raw(text: str, voice_id: str) -> bytes:
-    """One-shot Cartesia REST TTS that returns raw 24 kHz mono s16le PCM bytes.
-    Used to render the speech seed we feed into agent WebSockets."""
-    if not text.strip() or not CARTESIA_API_KEY:
-        return b""
+async def _get_cached_seed_pcm() -> bytes:
+    """Return the cached 1-second PCM seed, generating it lazily on first call.
+    Generating once at startup saves a Cartesia REST round-trip per agent turn.
+    """
+    global _CACHED_SEED_PCM
+    if _CACHED_SEED_PCM is not None:
+        return _CACHED_SEED_PCM
+    if not CARTESIA_API_KEY:
+        # Fall back to a brief 440Hz tone if no key configured.
+        import math as _m, struct as _s
+        n = 24000  # 1 second
+        buf = bytearray(n * 2)
+        for i in range(n):
+            v = int(0.22 * 32767 * _m.sin(2 * _m.pi * 440 * i / 24000))
+            _s.pack_into("<h", buf, i * 2, v)
+        _CACHED_SEED_PCM = bytes(buf)
+        return _CACHED_SEED_PCM
     headers = {
         "X-API-Key": CARTESIA_API_KEY,
         "Cartesia-Version": "2026-03-01",
         "Content-Type": "application/json",
     }
     payload = {
-        "model_id": CARTESIA_MODEL if False else "sonic-3",  # explicit
-        "transcript": text,
-        "voice": {"mode": "id", "id": voice_id},
+        "model_id": "sonic-3",
+        "transcript": _SEED_PHRASE,
+        "voice": {"mode": "id", "id": _SEED_VOICE_ID},
         "language": "en",
         "output_format": {
             "container": "raw",
@@ -592,33 +613,20 @@ async def _cartesia_tts_pcm_raw(text: str, voice_id: str) -> bytes:
         async with _http.post(
             "https://api.cartesia.ai/tts/bytes",
             json=payload, headers=headers,
-            timeout=aiohttp.ClientTimeout(total=20),
+            timeout=aiohttp.ClientTimeout(total=15),
         ) as r:
             if r.status != 200:
-                body = await r.text()
-                log.warning("seed-TTS %d: %s", r.status, body[:200])
-                return b""
-            return await r.read()
+                log.warning("cached seed TTS failed: %d", r.status)
+                _CACHED_SEED_PCM = b"\x00\x00" * 24000  # 1s silence fallback
+                return _CACHED_SEED_PCM
+            _CACHED_SEED_PCM = await r.read()
+            log.info("cached agent seed PCM: %d bytes (%.1fs of audio)",
+                     len(_CACHED_SEED_PCM), len(_CACHED_SEED_PCM) / 2 / 24000)
+            return _CACHED_SEED_PCM
     except Exception:
-        log.exception("seed-TTS failed")
-        return b""
-
-
-def _pick_seed_text(panel_context: str) -> str:
-    """Pull the most recent panel utterance to use as the agent's audible
-    'user input'. Falls back to a neutral prompt if transcript is empty."""
-    if not panel_context.strip():
-        return "Continue the panel discussion."
-    # Take the last non-empty line as the seed.
-    lines = [ln.strip() for ln in panel_context.splitlines() if ln.strip()]
-    if not lines:
-        return "Continue the panel discussion."
-    last = lines[-1]
-    # Strip persona name prefix if present ("Dr. Vale: ..." -> "...").
-    if ":" in last and len(last.split(":", 1)[0]) < 40:
-        last = last.split(":", 1)[1].strip()
-    # Cap length so seed doesn't balloon turn latency.
-    return last[:280]
+        log.exception("cached seed TTS exception")
+        _CACHED_SEED_PCM = b"\x00\x00" * 24000
+        return _CACHED_SEED_PCM
 
 
 def _build_agent_system_prompt(persona, panel_context: str) -> str:
@@ -691,21 +699,16 @@ async def _cartesia_agent_stream(
                 },
             }))
 
-            # Build the audio seed: TTS of the latest panel utterance + 1.5s of
-            # silence. The agent's STT needs to HEAR silence in the byte stream
-            # (not just absence of bytes) to endpoint and run the LLM.
-            seed_text = _pick_seed_text(panel_context)
-            speech_pcm = await _cartesia_tts_pcm_raw(
-                seed_text, persona.cartesia_voice_id,
-            )
-            if not speech_pcm:
-                # If seed TTS failed, fall back to a short generated silence;
-                # the agent may still respond after timeout but quality will drop.
-                speech_pcm = b"\x00\x00" * (24000 * 1)  # 1s silence fallback
+            # The seed audio is just a VAD trigger. The agent's LLM context
+            # is in system_prompt, so the seed phrase doesn't matter. We use
+            # a 1s cached "Go ahead." PCM generated once at startup, followed
+            # by 0.6s of silence to trip Cartesia's endpointing.
+            speech_pcm = await _get_cached_seed_pcm()
             audio_in = speech_pcm + _AGENT_SILENCE_PAD
 
-            # Stream at REAL-TIME pacing: 40ms chunks every 40ms. Going faster
-            # makes the agent's STT/VAD fail to lock onto utterance boundaries.
+            # Cartesia's streaming STT buffers — we don't need realtime pacing.
+            # Blast all chunks at ~5x realtime; the agent processes at its
+            # own rate and endpoints when it sees the silence segment.
             CHUNK_SIZE = 24000 * 40 // 1000 * 2  # 1920 bytes per 40ms
             async def feed_seed():
                 try:
@@ -716,7 +719,7 @@ async def _cartesia_agent_stream(
                             "stream_id": stream_id,
                             "media": {"payload": base64.b64encode(chunk).decode()},
                         }))
-                        await asyncio.sleep(0.04)  # realtime pacing
+                        await asyncio.sleep(0.008)  # ~5x realtime, still gentle
                 except Exception:
                     log.exception("agent feed_seed failed")
 
@@ -727,7 +730,7 @@ async def _cartesia_agent_stream(
             # after a one-time WAV header. We close on `clear` (agent done) or
             # when no media for ~3s after first byte.
             had_first_byte = False
-            AGENT_TIMEOUT_S = 35.0   # hard ceiling: seed-TTS + realtime-pacing + endpointing + LLM + TTS
+            AGENT_TIMEOUT_S = 18.0   # hard ceiling: cached seed (~1s) + endpointing (~0.6s) + LLM + TTS
             INACTIVITY_S = 8.0       # if no event in 8s and we have audio, end
             turn_start_at = time.monotonic()
             last_event_at = turn_start_at
@@ -1681,6 +1684,12 @@ async def on_startup(app: web.Application) -> None:
     _http = ClientSession()
     _gc_task = asyncio.create_task(_audio_gc_loop())
     _sync_personas_to_mode(_tts_provider)
+    # Pre-warm the cached agent seed so the first cartesia-agents turn
+    # doesn't pay a ~1s Cartesia REST round-trip.
+    try:
+        await _get_cached_seed_pcm()
+    except Exception:
+        log.exception("pre-warm agent seed failed (non-fatal)")
 
 
 async def on_cleanup(app: web.Application) -> None:
