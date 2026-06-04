@@ -872,12 +872,20 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
 
             if who is None or who not in PERSONAS:
                 if spoke_count == 0:
-                    # Include the per-persona urgency so the UI can show
-                    # why nobody spoke (typically: everyone rated < 4).
+                    # Include raw urgency PLUS bonus + adjusted so the SSE
+                    # feed shows the actual decision input. Surfacing only
+                    # raw urgency hid the "doctor=6 but went silent" bug
+                    # where the negative diversity bonus dragged adjusted
+                    # under the gate.
                     await _publish({
                         "type": "silence",
                         "votes": [
-                            {"persona": c["persona"], "urgency": c["urgency"]}
+                            {
+                                "persona": c["persona"],
+                                "urgency": c["urgency"],
+                                "bonus": c.get("bonus", 0),
+                                "adjusted": c.get("adjusted", c["urgency"]),
+                            }
                             for c in considerations
                         ],
                     })
