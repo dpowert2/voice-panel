@@ -73,6 +73,13 @@ _STATIVE_VERBS = {
 _recent_speakers: list[str] = []   # most recent first
 HISTORY_WINDOW = 8
 
+# Raw-urgency floor: a persona self-rating at or above this can't be
+# silenced by a negative diversity bonus. Prevents the symptom where a
+# fresh, on-topic question (urgency 6+) produces SILENCE because the
+# recent-speaker penalty (-3/-4) dropped the adjusted score under the
+# gate. Diversity weighting is meant to tilt, not veto a consensus.
+STRONG_URGENCY = 6
+
 
 def reset_history() -> None:
     """Clear who-spoke-when memory. Call this on POST /reset."""
@@ -311,13 +318,18 @@ async def orchestrate(
     if not candidates:
         return None, considerations
 
-    best = max(candidates, key=lambda c: c["adjusted"])
-    # Threshold on the ADJUSTED score: the diversity bonus is supposed to
-    # give quieter personas a real shot, so we apply the silence check on
-    # the same score we used to pick the winner. Silence only when even
-    # the bonus can't get someone above the bar.
-    if best["adjusted"] < urgency_threshold:
+    # Rank by ADJUSTED (diversity bonus tilts the pick), but a persona with
+    # a strong RAW urgency qualifies regardless of bonus. Otherwise a
+    # recently-loud persona's -3/-4 penalty could veto a genuine 6+ vote
+    # and produce a SILENCE on a clear question (the "I feel nauseous"
+    # symptom where doctor=6 + holistic=6 went silent after prior turns).
+    qualified = [
+        c for c in candidates
+        if c["adjusted"] >= urgency_threshold or c["urgency"] >= STRONG_URGENCY
+    ]
+    if not qualified:
         return None, considerations
+    best = max(qualified, key=lambda c: c["adjusted"])
 
     _record_speaker(best["persona"])
     return best["persona"], considerations
