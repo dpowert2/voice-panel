@@ -60,9 +60,10 @@ ELEVEN_API_KEY = os.environ["ELEVEN_API_KEY"]
 # Cartesia key: env var wins; fallback is committed for demo expedience.
 # ROTATE THIS in the Cartesia dashboard right after the demo — it's public.
 CARTESIA_API_KEY = os.environ.get("CARTESIA_API_KEY", "sk_car_uAPGrHGAx7CbGAKEmBPiXZ")
-# LiveAvatar (HeyGen) — video-avatar mode. Env-var only; never commit the key.
-# Defaults are from LiveAvatar's quickstart docs (public sandbox demo avatar).
-LIVEAVATAR_API_KEY = os.environ.get("LIVEAVATAR_API_KEY", "")
+# LiveAvatar (HeyGen) — video-avatar mode. Env var wins; fallback baked in
+# for demo expedience (same call as Cartesia above). Rotate post-demo.
+# Defaults for avatar_id / context_id are LiveAvatar's quickstart sandbox demo.
+LIVEAVATAR_API_KEY = os.environ.get("LIVEAVATAR_API_KEY", "8d9ab866-6069-11f1-8d28-066a7fa2e369")
 LIVEAVATAR_AVATAR_ID = os.environ.get("LIVEAVATAR_AVATAR_ID", "65f9e3c9-d48b-4118-b73a-4ae2e3cbb8f0")
 LIVEAVATAR_CONTEXT_ID = os.environ.get("LIVEAVATAR_CONTEXT_ID", "158f5d55-2d4f-11f1-8d28-066a7fa2e369")
 LIVEAVATAR_SANDBOX = os.environ.get("LIVEAVATAR_SANDBOX", "1") != "0"
