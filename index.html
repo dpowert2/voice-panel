@@ -64,6 +64,9 @@
   .tile[data-key="sam"]    {background:linear-gradient(135deg,var(--sam-bg)  0%, var(--panel) 100%);}
   .tile[data-key="marcus"] {background:linear-gradient(135deg,var(--marcus-bg) 0%, var(--panel) 100%);}
   .tile[data-key="reed"]   {background:linear-gradient(135deg,var(--reed-bg) 0%, var(--panel) 100%);}
+  .tile[data-key="doctor"]   {background:linear-gradient(135deg,var(--vale-bg)   0%, var(--panel) 100%);}
+  .tile[data-key="holistic"] {background:linear-gradient(135deg,var(--marcus-bg) 0%, var(--panel) 100%);}
+  .tile[data-key="lawyer"]   {background:linear-gradient(135deg,var(--reed-bg)   0%, var(--panel) 100%);}
   .tile[data-key="you"]    {background:linear-gradient(135deg,var(--you-bg) 0%, var(--panel) 100%);}
 
   .tile .avatar{display:flex;align-items:center;justify-content:center;
@@ -74,12 +77,40 @@
     font-size:64px;line-height:1;opacity:.95;
     transition:border-color .35s ease, box-shadow .35s ease;}
   .tile .avatar img{width:100%;height:100%;object-fit:cover;display:block;}
-  .tile.speaking[data-key="vale"]   .avatar{border-color:var(--vale);}
-  .tile.speaking[data-key="pri"]    .avatar{border-color:var(--pri);}
-  .tile.speaking[data-key="sam"]    .avatar{border-color:var(--sam);}
-  .tile.speaking[data-key="marcus"] .avatar{border-color:var(--marcus);}
-  .tile.speaking[data-key="reed"]   .avatar{border-color:var(--reed);}
-  .tile.speaking[data-key="you"]    .avatar{border-color:var(--warn);}
+  /* Thick colored border on the speaking avatar — base layer. */
+  .tile.speaking[data-key="vale"]     .avatar{border-color:var(--vale);   border-width:4px;}
+  .tile.speaking[data-key="pri"]      .avatar{border-color:var(--pri);    border-width:4px;}
+  .tile.speaking[data-key="sam"]      .avatar{border-color:var(--sam);    border-width:4px;}
+  .tile.speaking[data-key="marcus"]   .avatar{border-color:var(--marcus); border-width:4px;}
+  .tile.speaking[data-key="reed"]     .avatar{border-color:var(--reed);   border-width:4px;}
+  .tile.speaking[data-key="doctor"]   .avatar{border-color:var(--vale);   border-width:4px;}
+  .tile.speaking[data-key="holistic"] .avatar{border-color:var(--marcus); border-width:4px;}
+  .tile.speaking[data-key="lawyer"]   .avatar{border-color:var(--reed);   border-width:4px;}
+  .tile.speaking[data-key="you"]      .avatar{border-color:var(--warn);   border-width:4px;}
+
+  /* Speaker-style "talking" effect: the avatar VIBRATES like a loudspeaker
+     cone, and emits a colored radiating ring (the persona's accent colour).
+     Combined animation = micro-scale pulse + box-shadow ring expanding out.
+     Per-persona ring keyframes so each colour stays clean (rgba interpolation). */
+  @keyframes avatar-vibrate {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.06); }
+  }
+  @keyframes ring-vale     { 0% { box-shadow: 0 0 0 0 rgba(158,204,255,0.85); } 100% { box-shadow: 0 0 0 22px rgba(158,204,255,0); } }
+  @keyframes ring-pri      { 0% { box-shadow: 0 0 0 0 rgba(255,200,176,0.85); } 100% { box-shadow: 0 0 0 22px rgba(255,200,176,0); } }
+  @keyframes ring-sam      { 0% { box-shadow: 0 0 0 0 rgba(167,224,184,0.85); } 100% { box-shadow: 0 0 0 22px rgba(167,224,184,0); } }
+  @keyframes ring-marcus   { 0% { box-shadow: 0 0 0 0 rgba(217,179,255,0.85); } 100% { box-shadow: 0 0 0 22px rgba(217,179,255,0); } }
+  @keyframes ring-reed     { 0% { box-shadow: 0 0 0 0 rgba(245,210,114,0.85); } 100% { box-shadow: 0 0 0 22px rgba(245,210,114,0); } }
+  @keyframes ring-you      { 0% { box-shadow: 0 0 0 0 rgba(239,107,107,0.85); } 100% { box-shadow: 0 0 0 22px rgba(239,107,107,0); } }
+  .tile.speaking[data-key="vale"]     .avatar { animation: avatar-vibrate 0.5s ease-in-out infinite, ring-vale   1.1s ease-out infinite; }
+  .tile.speaking[data-key="pri"]      .avatar { animation: avatar-vibrate 0.5s ease-in-out infinite, ring-pri    1.1s ease-out infinite; }
+  .tile.speaking[data-key="sam"]      .avatar { animation: avatar-vibrate 0.5s ease-in-out infinite, ring-sam    1.1s ease-out infinite; }
+  .tile.speaking[data-key="marcus"]   .avatar { animation: avatar-vibrate 0.5s ease-in-out infinite, ring-marcus 1.1s ease-out infinite; }
+  .tile.speaking[data-key="reed"]     .avatar { animation: avatar-vibrate 0.5s ease-in-out infinite, ring-reed   1.1s ease-out infinite; }
+  .tile.speaking[data-key="doctor"]   .avatar { animation: avatar-vibrate 0.5s ease-in-out infinite, ring-vale   1.1s ease-out infinite; }
+  .tile.speaking[data-key="holistic"] .avatar { animation: avatar-vibrate 0.5s ease-in-out infinite, ring-marcus 1.1s ease-out infinite; }
+  .tile.speaking[data-key="lawyer"]   .avatar { animation: avatar-vibrate 0.5s ease-in-out infinite, ring-reed   1.1s ease-out infinite; }
+  .tile.speaking[data-key="you"]      .avatar { animation: avatar-vibrate 0.5s ease-in-out infinite, ring-you    1.1s ease-out infinite; }
   .tile .nameplate{position:absolute;left:12px;bottom:10px;display:flex;align-items:center;gap:8px;
     background:rgba(0,0,0,.42);backdrop-filter:blur(8px);padding:5px 10px;border-radius:8px;
     font-size:13px;font-weight:600;}
@@ -114,6 +145,9 @@
   .tile.speaking[data-key="marcus"] {border-color:var(--marcus); box-shadow:0 0 0 4px rgba(217,179,255,.18), 0 12px 40px rgba(217,179,255,.18);}
   .tile.speaking[data-key="reed"]   {border-color:var(--reed);   box-shadow:0 0 0 4px rgba(245,210,114,.18), 0 12px 40px rgba(245,210,114,.18);}
   .tile.speaking[data-key="you"]    {border-color:var(--warn);   box-shadow:0 0 0 4px rgba(239,107,107,.18), 0 12px 40px rgba(239,107,107,.18);}
+  .tile.speaking[data-key="doctor"]   {border-color:var(--vale);   box-shadow:0 0 0 4px rgba(158,204,255,.18), 0 12px 40px rgba(158,204,255,.18);}
+  .tile.speaking[data-key="holistic"] {border-color:var(--marcus); box-shadow:0 0 0 4px rgba(217,179,255,.18), 0 12px 40px rgba(217,179,255,.18);}
+  .tile.speaking[data-key="lawyer"]   {border-color:var(--reed);   box-shadow:0 0 0 4px rgba(245,210,114,.18), 0 12px 40px rgba(245,210,114,.18);}
 
   /* equalizer in the nameplate when speaking */
   .tile .eq{display:none;align-items:flex-end;gap:2px;height:14px;margin-left:2px}
@@ -130,6 +164,9 @@
   .tile[data-key="sam"]    .eq{color:var(--sam)}
   .tile[data-key="marcus"] .eq{color:var(--marcus)}
   .tile[data-key="reed"]   .eq{color:var(--reed)}
+  .tile[data-key="doctor"]   .eq{color:var(--vale)}
+  .tile[data-key="holistic"] .eq{color:var(--marcus)}
+  .tile[data-key="lawyer"]   .eq{color:var(--reed)}
   .tile[data-key="you"]    .eq{color:var(--warn)}
 
   /* ===== bottom controls bar ===== */
@@ -431,8 +468,8 @@ function closeFeed(){
 feedToggle.addEventListener("click", openFeed);
 feedClose.addEventListener("click", closeFeed);
 
-const AVATARS = { vale: "🩺", pri: "💊", sam: "🌿", marcus: "💼", reed: "⚖️", you: "🧑" };
-const ROLES   = { vale: "GP",  pri: "Pharmacist", sam: "Wellness coach", marcus: "Integrative health", reed: "Attorney", you: "Patient" };
+const AVATARS = { vale: "🩺", pri: "💊", sam: "🌿", marcus: "💼", reed: "⚖️", doctor: "🩺", holistic: "🌿", lawyer: "⚖️", you: "🧑" };
+const ROLES   = { vale: "GP",  pri: "Pharmacist", sam: "Wellness coach", marcus: "Integrative health", reed: "Attorney", doctor: "GP", holistic: "Wellness guru", lawyer: "Attorney", you: "Patient" };
 
 let PERSONAS = {};
 
