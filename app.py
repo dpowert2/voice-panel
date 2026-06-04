@@ -412,7 +412,7 @@ async def _eleven_stream_input(
 # element can decode them progressively over chunked transfer-encoding.
 
 CARTESIA_WS_URL = "wss://api.cartesia.ai/tts/websocket?cartesia_version=2026-03-01"
-CARTESIA_WS_MODEL = "sonic-3"
+CARTESIA_WS_MODEL = "sonic-3.5"  # latest stable (May 2026) — more natural pacing/emotion than sonic-3
 CARTESIA_SAMPLE_RATE = 24000  # 24 kHz mono 16-bit PCM
 
 

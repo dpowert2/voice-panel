@@ -50,7 +50,7 @@ log = logging.getLogger("voice-panel.pipecat")
 
 CARTESIA_SAMPLE_RATE = 24000
 CARTESIA_WS_URL = "wss://api.cartesia.ai/tts/websocket?cartesia_version=2026-03-01"
-CARTESIA_WS_MODEL = "sonic-3"
+CARTESIA_WS_MODEL = "sonic-3.5"  # latest stable (May 2026) — more natural pacing/emotion than sonic-3
 
 # Pipecat import is now purely informational — we don't use it on the hot
 # path. Kept so /diag/state can still expose whether the dep is installed.
