@@ -1299,9 +1299,18 @@ async def handle_turn_audio(request: web.Request) -> web.StreamResponse:
 # Avatar lookup: serves the first matching static/<key>.{jpg,jpeg,png,webp,gif}
 # Returns 404 cleanly so the frontend can fall back to an emoji avatar.
 _AVATAR_EXTS = ("jpg", "jpeg", "png", "webp", "gif")
+# cartesia-agents personas (doctor / holistic / lawyer) don't have their own
+# image assets in static/ — alias to the closest 5-persona archetype so the
+# tile still renders a picture in agents mode.
+_AVATAR_ALIASES = {
+    "doctor":   "vale",    # both female GPs
+    "holistic": "marcus",  # both holistic-guru bad-actor archetypes
+    "lawyer":   "reed",    # both lawyer archetypes
+}
 
 async def handle_avatar(request: web.Request) -> web.FileResponse:
     key = request.match_info["key"]
+    key = _AVATAR_ALIASES.get(key, key)
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     for ext in _AVATAR_EXTS:
         path = os.path.join(static_dir, f"{key}.{ext}")
