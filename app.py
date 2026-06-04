@@ -893,25 +893,45 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
 
             persona = PERSONAS[who]
             turn_id = secrets.token_hex(8)
-            # Snapshot provider here so the AudioStream's mime matches the
-            # actual TTS path we'll take for this turn.
             provider_for_turn = _tts_provider
-            stream = AudioStream(
-                mime="audio/wav" if provider_for_turn in ("cartesia", "cartesia-agents") else "audio/mpeg"
-            )
+
+            # Pick the audio delivery path based on provider:
+            # - cartesia-agents → raw PCM over WebSocket → Web Audio API in
+            #   the browser. Cartesia's reference low-latency pattern.
+            # - cartesia (5-persona) and elevenlabs → existing chunked-HTTP
+            #   path to a browser <audio> element. (audio/wav or audio/mpeg.)
+            if provider_for_turn == "cartesia-agents":
+                audio_url = f"/turn-audio-ws/{turn_id}"
+                audio_format = "pcm_s16le"
+                audio_sample_rate = CARTESIA_SAMPLE_RATE
+                stream = AudioStream(mime="application/octet-stream")
+            elif provider_for_turn == "cartesia":
+                audio_url = f"/turn-audio/{turn_id}"
+                audio_format = "wav"
+                audio_sample_rate = None
+                stream = AudioStream(mime="audio/wav")
+            else:  # elevenlabs
+                audio_url = f"/turn-audio/{turn_id}"
+                audio_format = "mp3"
+                audio_sample_rate = None
+                stream = AudioStream(mime="audio/mpeg")
             _audio_streams[turn_id] = stream
             text_buf: list[str] = []
 
-            # Tell the frontend immediately so it can open <audio
-            # src="/turn-audio/<id>"> while we're still generating.
-            _diag_log(_diag_chain, kind="turn_start", id=turn_id, who=persona.key)
+            # Tell the frontend immediately so it can open the audio stream
+            # while we're still generating. The frontend dispatches on
+            # audio_format to pick the right player (WS+WebAudio vs <audio>).
+            _diag_log(_diag_chain, kind="turn_start", id=turn_id, who=persona.key,
+                      audio_format=audio_format)
             await _publish({
                 "type": "turn_start",
                 "id": turn_id,
                 "speaker": persona.name,
                 "persona_key": persona.key,
                 "is_bad_actor": persona.is_bad_actor,
-                "audio_url": f"/turn-audio/{turn_id}",
+                "audio_url": audio_url,
+                "audio_format": audio_format,
+                "sample_rate": audio_sample_rate,
             })
 
             # Phase D: in parallel, ask Haiku if any other panelist would
@@ -1296,6 +1316,69 @@ async def handle_turn_audio(request: web.Request) -> web.StreamResponse:
     return resp
 
 
+# WebSocket audio path — used by the cartesia-agents mode. Streams raw s16le
+# PCM frames directly to the browser, which schedules them via Web Audio API
+# (AudioContext.createBufferSource). This is Cartesia's reference low-latency
+# pattern (see docs.cartesia.ai/examples/tts-websocket-low-latency).
+#
+# Why this replaces /turn-audio for agents mode: the chunked-HTTP <audio>
+# element path was unreliable when audio bytes arrived in bursts after a long
+# idle (Cartesia's managed buffering can hold output up to max_buffer_delay_ms
+# before flushing). Web Audio doesn't care about timing of arrival — each
+# chunk is scheduled precisely on the audio clock the moment it arrives.
+#
+# 5-persona cartesia + elevenlabs modes still use the legacy /turn-audio HTTP
+# endpoint (above). Reactions also use /turn-audio (small MP3 payloads).
+async def handle_turn_audio_ws(request: web.Request) -> web.WebSocketResponse:
+    turn_id = request.match_info["id"]
+    stream = _audio_streams.get(turn_id)
+    if not stream:
+        log.warning("turn-audio-ws %s: stream missing (404)", turn_id)
+        _diag_log(_diag_audio, turn_id=turn_id, status="ws_404_missing")
+        raise web.HTTPNotFound()
+
+    ws = web.WebSocketResponse(heartbeat=20)
+    await ws.prepare(request)
+
+    t0 = time.monotonic()
+    first_byte_at: float | None = None
+    total_bytes = 0
+    chunks = 0
+    client_ua = request.headers.get("User-Agent", "?")[:80]
+    outcome = "completed"
+
+    log.info("turn-audio-ws %s: OPENED ua=%s", turn_id, client_ua)
+    _diag_log(_diag_audio, turn_id=turn_id, status="ws_opened", ua=client_ua)
+
+    try:
+        async for chunk in stream.read():
+            if first_byte_at is None:
+                first_byte_at = time.monotonic()
+                ttfb_ms = int((first_byte_at - t0) * 1000)
+                log.info("turn-audio-ws %s: FIRST FRAME %dms", turn_id, ttfb_ms)
+                _diag_log(_diag_audio, turn_id=turn_id, status="ws_first_byte", ttfb_ms=ttfb_ms)
+            await ws.send_bytes(chunk)
+            total_bytes += len(chunk)
+            chunks += 1
+        await ws.close()
+    except (ConnectionResetError, asyncio.CancelledError):
+        outcome = "client_disconnected"
+    except Exception as e:
+        outcome = f"error:{type(e).__name__}"
+        log.exception("turn-audio-ws %s: error", turn_id)
+    finally:
+        total_ms = int((time.monotonic() - t0) * 1000)
+        ttfb_ms = int((first_byte_at - t0) * 1000) if first_byte_at else None
+        log.info(
+            "turn-audio-ws %s: CLOSED outcome=%s bytes=%d chunks=%d ttfb_ms=%s total_ms=%d",
+            turn_id, outcome, total_bytes, chunks, ttfb_ms, total_ms,
+        )
+        _diag_log(_diag_audio, turn_id=turn_id, status=f"ws_{outcome}",
+                  bytes=total_bytes, chunks=chunks,
+                  ttfb_ms=ttfb_ms, total_ms=total_ms)
+    return ws
+
+
 # Avatar lookup: serves the first matching static/<key>.{jpg,jpeg,png,webp,gif}
 # Returns 404 cleanly so the frontend can fall back to an emoji avatar.
 _AVATAR_EXTS = ("jpg", "jpeg", "png", "webp", "gif")
@@ -1461,6 +1544,7 @@ def make_app() -> web.Application:
     app.router.add_get("/events", handle_events)
     app.router.add_get("/avatar/{key}", handle_avatar)
     app.router.add_get("/turn-audio/{id}", handle_turn_audio)
+    app.router.add_get("/turn-audio-ws/{id}", handle_turn_audio_ws)
     app.router.add_get("/version", handle_version)
     app.router.add_get("/health_record", handle_get_record)
     app.router.add_post("/health_record", handle_set_record)

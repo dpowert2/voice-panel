@@ -40,7 +40,6 @@ import base64
 import json
 import logging
 import secrets
-import struct
 import time
 from typing import AsyncIterator
 
@@ -62,22 +61,6 @@ try:
     _PIPECAT_AVAILABLE = True
 except Exception as e:  # pragma: no cover
     _PIPECAT_IMPORT_ERROR = f"{type(e).__name__}: {e}"
-
-
-def streaming_wav_header(sample_rate: int = CARTESIA_SAMPLE_RATE) -> bytes:
-    """44-byte RIFF/WAVE header with size fields set to 0xFFFFFFFF — tells the
-    browser the stream length is unknown so it keeps playing until the
-    connection closes. Mono 16-bit PCM little-endian."""
-    byte_rate = sample_rate * 1 * 16 // 8
-    block_align = 1 * 16 // 8
-    return (
-        b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVE"
-        + b"fmt " + struct.pack(
-            "<IHHIIHH",
-            16, 1, 1, sample_rate, byte_rate, block_align, 16,
-        )
-        + b"data" + struct.pack("<I", 0xFFFFFFFE)
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +171,6 @@ async def _cartesia_stream_from_tokens(
         })
 
     headers = {"X-API-Key": cartesia_api_key}
-    header_emitted = False
 
     try:
         async with http_session.ws_connect(
@@ -239,10 +221,7 @@ async def _cartesia_stream_from_tokens(
                         except Exception:
                             log.exception("cartesia-agents bad audio chunk")
                             continue
-                        if not header_emitted:
-                            header_emitted = True
-                            yield streaming_wav_header()
-                        yield pcm
+                        yield pcm  # raw s16le PCM — browser decodes via Web Audio API
                     elif ev_type == "done" and ev.get("done"):
                         break
             finally:
