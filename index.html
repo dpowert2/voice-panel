@@ -47,6 +47,14 @@
     cursor:help;letter-spacing:.3px;}
 
   #stage{flex:1;display:grid;grid-template-rows:1fr auto;gap:14px;padding:14px;min-height:0;}
+  #video-stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:12px;padding:24px;min-height:0;background:var(--panel);}
+  #video-stage[hidden]{display:none;}
+  #video-status{color:var(--mute);font-size:12px;font-family:"SF Mono",Menlo,monospace;
+    letter-spacing:.4px;text-transform:uppercase;}
+  #video-iframe{width:100%;max-width:1200px;height:100%;max-height:80vh;
+    aspect-ratio:16/9;border:none;border-radius:14px;background:#000;
+    box-shadow:0 20px 60px rgba(0,0,0,.5);}
   /* auto-fit grid: 4 panelists → 2x2; 5 panelists → 3 cols (one empty cell ok);
      narrows down gracefully on smaller widths. */
   #panel-grid{display:grid;
@@ -359,6 +367,7 @@
           <label><input type="radio" name="tts-mode" value="elevenlabs"><span>11labs</span></label>
           <label><input type="radio" name="tts-mode" value="cartesia"><span>cartesia</span></label>
           <label><input type="radio" name="tts-mode" value="cartesia-agents"><span>agents</span></label>
+          <label><input type="radio" name="tts-mode" value="video"><span>video</span></label>
         </fieldset>
       </div>
     </header>
@@ -366,6 +375,10 @@
     <div id="stage">
       <section id="panel-grid"></section>
       <section id="you-row"></section>
+    </div>
+    <div id="video-stage" hidden>
+      <div id="video-status">Starting LiveAvatar session…</div>
+      <iframe id="video-iframe" allow="microphone" title="LiveAvatar"></iframe>
     </div>
 
     <div id="controls">
@@ -1651,6 +1664,57 @@ async function loadTtsProvider(){
   } catch(e){ console.warn("tts provider load failed", e); }
 }
 
+/* ---- Video (LiveAvatar) mode ------------------------------------- *
+ * When the user selects "video", we hide the panel grid and replace it with
+ * a LiveAvatar iframe. The backend mints a short-lived embed URL (sandbox
+ * mode by default — no credits consumed) so the API key never reaches the
+ * browser. Switching back to any other mode hides the iframe and restores
+ * the panel grid. The avatar handles its own ASR/LLM/TTS inside the iframe.
+ * ------------------------------------------------------------------- */
+const _stageEl       = document.getElementById("stage");
+const _videoStage    = document.getElementById("video-stage");
+const _videoIframe   = document.getElementById("video-iframe");
+const _videoStatus   = document.getElementById("video-status");
+let   _videoMode     = false;
+
+async function _enterVideoMode(){
+  _videoMode = true;
+  _stopAllAudio();
+  if (_stageEl) _stageEl.hidden = true;
+  if (_videoStage) _videoStage.hidden = false;
+  if (_videoStatus) _videoStatus.textContent = "Starting LiveAvatar session…";
+  if (_videoIframe) _videoIframe.src = "about:blank";
+  try {
+    const r = await fetch("/video/session", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({}),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.url){
+      const msg = data.error || `HTTP ${r.status}`;
+      if (_videoStatus) _videoStatus.textContent = `Couldn't start LiveAvatar: ${msg}`;
+      console.warn("[video] session failed", data);
+      return;
+    }
+    if (_videoStatus) _videoStatus.textContent =
+      data.is_sandbox ? "Sandbox session (no credits)" : "Live session";
+    if (_videoIframe) _videoIframe.src = data.url;
+    console.log("[video] session started", data);
+  } catch(e){
+    if (_videoStatus) _videoStatus.textContent = `Network error: ${e.message}`;
+    console.warn("[video] fetch failed", e);
+  }
+}
+
+function _exitVideoMode(){
+  if (!_videoMode) return;
+  _videoMode = false;
+  if (_videoIframe) _videoIframe.src = "about:blank";
+  if (_videoStage) _videoStage.hidden = true;
+  if (_stageEl) _stageEl.hidden = false;
+}
+
 async function setTtsProvider(next){
   const group = document.getElementById("tts-modes");
   if (!group) return;
@@ -1672,6 +1736,12 @@ async function setTtsProvider(next){
     // Re-fetch /personas and rebuild the tile grid so the UI matches.
     await loadPersonas();
     await loadRecord();
+    // Toggle the video stage based on the mode we just switched into.
+    if (next === "video") {
+      await _enterVideoMode();
+    } else {
+      _exitVideoMode();
+    }
   } catch(e){
     alert("Mode switch network failed: " + e.message);
     await loadTtsProvider();
@@ -1687,11 +1757,21 @@ document.getElementById("tts-modes")?.addEventListener("change", (ev) => {
   }
 });
 
+async function _maybeEnterInitialVideoMode(){
+  // If the server was last set to "video", restore that view on page load.
+  try {
+    const r = await fetch("/tts/provider", { cache: "no-store" });
+    const d = await r.json();
+    if (d.provider === "video") await _enterVideoMode();
+  } catch(_) {}
+}
+
 (async () => {
   await loadPersonas();
   await loadTtsProvider();
   await loadRecord();   // fetch + render the patient record badge
   await loadVersion();  // show the running build's git SHA in the header
+  await _maybeEnterInitialVideoMode();
   openEventStream();
   inputEl.focus();
 })();
