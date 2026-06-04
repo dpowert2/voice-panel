@@ -60,6 +60,12 @@ ELEVEN_API_KEY = os.environ["ELEVEN_API_KEY"]
 # Cartesia key: env var wins; fallback is committed for demo expedience.
 # ROTATE THIS in the Cartesia dashboard right after the demo — it's public.
 CARTESIA_API_KEY = os.environ.get("CARTESIA_API_KEY", "sk_car_uAPGrHGAx7CbGAKEmBPiXZ")
+# LiveAvatar (HeyGen) — video-avatar mode. Env-var only; never commit the key.
+# Defaults are from LiveAvatar's quickstart docs (public sandbox demo avatar).
+LIVEAVATAR_API_KEY = os.environ.get("LIVEAVATAR_API_KEY", "")
+LIVEAVATAR_AVATAR_ID = os.environ.get("LIVEAVATAR_AVATAR_ID", "65f9e3c9-d48b-4118-b73a-4ae2e3cbb8f0")
+LIVEAVATAR_CONTEXT_ID = os.environ.get("LIVEAVATAR_CONTEXT_ID", "158f5d55-2d4f-11f1-8d28-066a7fa2e369")
+LIVEAVATAR_SANDBOX = os.environ.get("LIVEAVATAR_SANDBOX", "1") != "0"
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
@@ -1405,6 +1411,75 @@ async def handle_avatar(request: web.Request) -> web.FileResponse:
 
 
 # ---------------------------------------------------------------------------
+# LiveAvatar (HeyGen) — video-mode session endpoint
+# ---------------------------------------------------------------------------
+# Mints a short-lived embed URL on demand. Sandbox mode keeps credits at zero
+# for the demo. The browser receives just the URL — the API key never leaves
+# this process. POST is preferred so the URL isn't cached or logged in proxies.
+
+LIVEAVATAR_EMBED_URL = "https://api.liveavatar.com/v2/embeddings"
+
+
+async def handle_video_session(request: web.Request) -> web.Response:
+    """Create a LiveAvatar embed session, return the iframe URL.
+
+    Frontend calls this when the user switches to "video" mode. We POST to
+    LiveAvatar's /v2/embeddings with our API key (server-side only), and
+    proxy back the embed URL. Sandbox mode by default — no credits consumed.
+    """
+    if not LIVEAVATAR_API_KEY:
+        return web.json_response(
+            {"error": "LIVEAVATAR_API_KEY not configured on the server"},
+            status=503,
+        )
+    try:
+        body = await request.json() if request.can_read_body else {}
+    except Exception:
+        body = {}
+    payload = {
+        "avatar_id":  body.get("avatar_id")  or LIVEAVATAR_AVATAR_ID,
+        "context_id": body.get("context_id") or LIVEAVATAR_CONTEXT_ID,
+        "is_sandbox": bool(body.get("is_sandbox", LIVEAVATAR_SANDBOX)),
+    }
+    headers = {
+        "X-API-KEY": LIVEAVATAR_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        async with _http.post(
+            LIVEAVATAR_EMBED_URL, json=payload, headers=headers,
+            timeout=aiohttp.ClientTimeout(total=15),
+        ) as r:
+            txt = await r.text()
+            if r.status != 200:
+                log.warning("liveavatar embed %d: %s", r.status, txt[:300])
+                return web.json_response(
+                    {"error": f"liveavatar {r.status}", "details": txt[:300]},
+                    status=502,
+                )
+            data = json.loads(txt)
+            url = (data.get("data") or {}).get("url")
+            if not url:
+                return web.json_response(
+                    {"error": "no url in liveavatar response", "raw": data},
+                    status=502,
+                )
+            log.info("liveavatar session created (sandbox=%s)", payload["is_sandbox"])
+            return web.json_response({
+                "url": url,
+                "avatar_id": payload["avatar_id"],
+                "context_id": payload["context_id"],
+                "is_sandbox": payload["is_sandbox"],
+            })
+    except asyncio.TimeoutError:
+        return web.json_response({"error": "liveavatar timeout"}, status=504)
+    except Exception as e:
+        log.exception("liveavatar embed call failed")
+        return web.json_response({"error": str(e)}, status=500)
+
+
+# ---------------------------------------------------------------------------
 # Diagnostic endpoints — inspect runtime state without restarting / redeploying
 # ---------------------------------------------------------------------------
 
@@ -1483,8 +1558,9 @@ def _sync_personas_to_mode(provider: str) -> None:
 async def handle_tts_provider_get(request: web.Request) -> web.Response:
     return web.json_response({
         "provider": _tts_provider,
-        "available": ["elevenlabs", "cartesia", "cartesia-agents"],
+        "available": ["elevenlabs", "cartesia", "cartesia-agents", "video"],
         "cartesia_configured": bool(CARTESIA_API_KEY),
+        "liveavatar_configured": bool(LIVEAVATAR_API_KEY),
     })
 
 
@@ -1495,14 +1571,19 @@ async def handle_tts_provider_set(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"error": "invalid json"}, status=400)
     p = (body.get("provider") or "").strip().lower()
-    if p not in ("elevenlabs", "cartesia", "cartesia-agents"):
+    if p not in ("elevenlabs", "cartesia", "cartesia-agents", "video"):
         return web.json_response(
-            {"error": "provider must be 'elevenlabs', 'cartesia', or 'cartesia-agents'"},
+            {"error": "provider must be 'elevenlabs', 'cartesia', 'cartesia-agents', or 'video'"},
             status=400,
         )
     if p in ("cartesia", "cartesia-agents") and not CARTESIA_API_KEY:
         return web.json_response(
             {"error": "CARTESIA_API_KEY env var not set on the server."},
+            status=400,
+        )
+    if p == "video" and not LIVEAVATAR_API_KEY:
+        return web.json_response(
+            {"error": "LIVEAVATAR_API_KEY env var not set on the server."},
             status=400,
         )
     _tts_provider = p
@@ -1555,6 +1636,7 @@ def make_app() -> web.Application:
     app.router.add_get("/diag/audio-test", handle_diag_audio_test)
     app.router.add_get("/tts/provider", handle_tts_provider_get)
     app.router.add_post("/tts/provider", handle_tts_provider_set)
+    app.router.add_post("/video/session", handle_video_session)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     return app
