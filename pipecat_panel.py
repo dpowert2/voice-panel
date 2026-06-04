@@ -271,10 +271,10 @@ async def agents_mode_stream(
 ) -> AsyncIterator[bytes]:
     """One panel turn: Claude (streaming) → Cartesia WS (token-paced) → PCM.
 
-    `text_out` is filled with each text delta as it streams; the caller can
-    `"".join(text_out)` after the iterator drains to get the full reply for
-    transcript appending. Audio bytes are yielded with a streaming WAV
-    header prepended on the first chunk.
+    Audio bytes are yielded with a streaming WAV header prepended on the
+    first chunk. After the iterator drains, ``text_out`` contains exactly
+    one entry — the full spoken text — so the caller can do
+    ``text_out[0]`` (the contract app.py's _stream_tts expects).
     """
     text_out.clear()
 
@@ -292,12 +292,17 @@ async def agents_mode_stream(
         persona, panel_context, anthropic_api_key, http_session,
     )
 
+    # Accumulate deltas in a local buffer; finalise text_out as a single
+    # joined string once streaming completes so the existing chain runner
+    # (which reads text_out[0]) gets the full reply.
+    delta_buf: list[str] = []
+
     async for chunk in _cartesia_stream_from_tokens(
         persona,
         token_iter,
         cartesia_api_key,
         http_session,
-        text_out=text_out,
+        text_out=delta_buf,
     ):
         if first_audio_at is None:
             first_audio_at = time.monotonic()
@@ -306,6 +311,9 @@ async def agents_mode_stream(
                 persona.key, int((first_audio_at - t0) * 1000),
             )
         yield chunk
+
+    if delta_buf:
+        text_out.append("".join(delta_buf))
 
 
 def pipecat_available() -> bool:
