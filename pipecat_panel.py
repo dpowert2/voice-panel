@@ -184,7 +184,7 @@ async def _cartesia_stream_from_tokens(
             "context_id": context_id,
             "output_format": output_format,
             "continue": cont,
-            "max_buffer_delay_ms": 0,
+            "max_buffer_delay_ms": 1000,  # MANAGED buffering — let Cartesia aggregate tokens into phrases
         })
 
     headers = {"X-API-Key": cartesia_api_key}

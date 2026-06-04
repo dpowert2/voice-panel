@@ -470,7 +470,7 @@ async def _cartesia_stream_input(
             "context_id": context_id,
             "output_format": output_format,
             "continue": cont,
-            "max_buffer_delay_ms": 0,   # disable Cartesia's 3s default buffer
+            "max_buffer_delay_ms": 1000,  # MANAGED buffering — let Cartesia aggregate tokens into phrases
         })
 
     headers = {"X-API-Key": CARTESIA_API_KEY}
