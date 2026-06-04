@@ -854,6 +854,18 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
     vote and goes directly to that persona. Used for direct-address routing
     ("Vale, what do you think?"). The chain then continues normally.
     """
+    # Defensive: hard-resync persona enable state with current mode at the
+    # start of every chain. Without this, any prior tile-toggle click, a
+    # mid-chain mode switch, or a stale POST /personas/{key}/enabled call
+    # could leave the previous mode's personas enabled and they'd leak
+    # into the next chain (symptom: Marcus / Pri appearing in agents mode).
+    _sync_personas_to_mode(_tts_provider)
+    log.info(
+        "chain start: mode=%s enabled=%s",
+        _tts_provider,
+        [k for k in PERSONAS.keys() if persona_is_enabled(k)],
+    )
+
     last_who: str | None = None
     spoke_count = 0
     try:
