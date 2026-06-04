@@ -19,6 +19,13 @@ Cost: 4 parallel Haiku evaluations + 1 Sonnet reply ≈ same as the old
 
 Direct-address ("Vale, what do you think?") bypasses the parallel vote and
 forces that persona to speak first; the chain then continues normally.
+
+NEVER-SILENCE POLICY:
+In a live group conversation, the panel should never go dead. If nobody
+crosses the normal urgency threshold, orchestrate() falls back through
+tiers: (1) relaxed bar (urgency >= 1), then (2) judgement-call — pick
+whoever spoke least recently. SILENCE is effectively impossible while
+at least one persona is enabled.
 """
 
 from __future__ import annotations
@@ -277,11 +284,23 @@ async def orchestrate(
             Used for direct-address ("Vale, what do you think?").
         last_speaker: never re-pick this persona (defense in depth — the
             consider prompts also self-throttle).
-        urgency_threshold: minimum urgency required to be picked. Below
-            this, return None (= silence, let the human reply).
+        urgency_threshold: minimum urgency required at the strict tier.
+            We NEVER return None for "no one urgent enough" — the tiered
+            fallback below guarantees a pick whenever at least one
+            persona is enabled.
 
     Returns:
-        (persona_key or None, list of {persona, urgency, reason} for logging)
+        (persona_key or None, list of {persona, urgency, reason, ...}).
+        Persona is None only if everyone is muted or the same speaker
+        is the only candidate (back-to-back blocked).
+
+    Never-silence policy:
+        Tier 1: adjusted >= threshold OR raw >= STRONG_URGENCY (existing).
+        Tier 2: "relaxed" — anyone with raw urgency >= 1 qualifies.
+        Tier 3: "stalest" — judgement call. Pick whoever spoke least
+                recently. Always succeeds if there's a candidate.
+        The chosen consideration is annotated with `fallback_tier`
+        ("relaxed" / "stalest") so /diag/state shows which fired.
     """
     # Direct address still wins — but only if that persona is enabled.
     # If the user addresses a muted persona, fall through to the normal vote.
@@ -313,23 +332,66 @@ async def orchestrate(
             "reason": r["reason"],
         })
 
-    # Exclude whoever just spoke; pick highest ADJUSTED score.
+    # Exclude whoever just spoke; pick from the remainder.
     candidates = [c for c in considerations if c["persona"] != last_speaker]
     if not candidates:
         return None, considerations
 
-    # Rank by ADJUSTED (diversity bonus tilts the pick), but a persona with
-    # a strong RAW urgency qualifies regardless of bonus. Otherwise a
-    # recently-loud persona's -3/-4 penalty could veto a genuine 6+ vote
-    # and produce a SILENCE on a clear question (the "I feel nauseous"
-    # symptom where doctor=6 + holistic=6 went silent after prior turns).
+    # ---- Tier 1: strict threshold ----------------------------------------
+    # Adjusted bar OR raw "strong" floor (the latter survives a punishing
+    # diversity bonus on a genuinely urgent topic).
     qualified = [
         c for c in candidates
         if c["adjusted"] >= urgency_threshold or c["urgency"] >= STRONG_URGENCY
     ]
+    fallback_tier: str | None = None
+
+    # ---- Tier 2: relaxed bar ---------------------------------------------
+    # A live group dialogue should never produce silence just because
+    # everyone was politely modest. If anyone admitted to ANY engagement
+    # (urgency >= 1), pick them by adjusted score.
     if not qualified:
+        relaxed = [c for c in candidates if c["urgency"] >= 1]
+        if relaxed:
+            qualified = relaxed
+            fallback_tier = "relaxed"
+
+    # ---- Tier 3: judgement call ("stalest") ------------------------------
+    # Every persona rated 0. The conversation still has to continue, so
+    # we pick whoever spoke least recently (or never) — natural rotation
+    # rather than always-the-same fallback persona.
+    if not qualified:
+        def _staleness(persona_key: str) -> int:
+            # Bigger = spoke longer ago (or never). Never-spoken wins.
+            if persona_key not in _recent_speakers:
+                return HISTORY_WINDOW + 10
+            return _recent_speakers.index(persona_key) + 1
+        qualified = sorted(
+            candidates,
+            key=lambda c: _staleness(c["persona"]),
+            reverse=True,
+        )
+        if qualified:
+            fallback_tier = "stalest"
+
+    if not qualified:
+        # Truly impossible with non-empty candidates, but defensive.
         return None, considerations
-    best = max(qualified, key=lambda c: c["adjusted"])
+
+    # Tier 3 already sorted by staleness — pick the first; otherwise pick
+    # the highest adjusted score among the qualified set.
+    if fallback_tier == "stalest":
+        best = qualified[0]
+    else:
+        best = max(qualified, key=lambda c: c["adjusted"])
+
+    # Annotate the chosen consideration so the SSE/diag log shows which
+    # tier fired. Useful for tuning the fallback bar later.
+    if fallback_tier:
+        for c in considerations:
+            if c["persona"] == best["persona"]:
+                c["fallback_tier"] = fallback_tier
+                break
 
     _record_speaker(best["persona"])
     return best["persona"], considerations
