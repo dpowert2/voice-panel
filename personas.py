@@ -384,8 +384,8 @@ PERSONA_SETS = {
     "elevenlabs":      ("vale", "pri", "sam", "marcus", "reed"),
     "cartesia":        ("vale", "pri", "sam", "marcus", "reed"),
     "cartesia-agents": ("doctor", "holistic", "lawyer"),
-    # "video" mode renders a LiveAvatar (HeyGen) iframe in the panel area.
-    # The avatar handles its own conversation flow inside the iframe — no
-    # panel personas, no orchestrator. Mode-switch hides the tile grid.
-    "video":           (),
+    # "video" mode: same 3-persona panel as cartesia-agents, but each tile
+    # renders a live Anam avatar (WebRTC). Our orchestrator + Claude still
+    # drive every word — Anam only does TTS + face render (CUSTOMER_CLIENT_V1).
+    "video":           ("doctor", "holistic", "lawyer"),
 }
