@@ -1724,6 +1724,12 @@ async function _enterVideoMode(){
     if (!_anamSDK){
       _anamSDK = await import("https://esm.sh/@anam-ai/js-sdk@4.15.0");
     }
+    // Connect SEQUENTIALLY in persona-set order (doctor → holistic →
+    // lawyer). The account has a fixed concurrent-session allowance; when
+    // three parallel WebRTC negotiations race for fewer slots, WHICH tiles
+    // win is random per page load. Sequential awaits make the outcome
+    // deterministic: highest-priority personas always claim the slots and
+    // any shortfall lands on the same tile every time.
     for (const [key, token] of Object.entries(data.tokens)){
       const tile = document.getElementById(`tile-${key}`);
       if (!tile){ console.warn(`[anam] no tile for ${key}`); continue; }
@@ -1739,15 +1745,20 @@ async function _enterVideoMode(){
       }
       try {
         const client = _anamSDK.createClient(token, { disableInputAudio: true });
+        await client.streamToVideoElement(v.id);
         _anamClients[key] = client;
-        // Fire-and-forget: each tile connects independently so one slow
-        // WebRTC negotiation doesn't block the others.
-        client.streamToVideoElement(v.id).then(
-          () => console.log(`[anam] ${key} connected`),
-          (e) => console.warn(`[anam] ${key} stream failed`, e),
-        );
+        console.log(`[anam] ${key} connected`);
       } catch(e){
-        console.warn(`[anam] client create failed for ${key}`, e);
+        const msg = (e && e.message) || String(e);
+        console.warn(`[anam] ${key} stream failed: ${msg}`);
+        tile.classList.remove("video-tile");
+        const dead = tile.querySelector("video.anam-feed");
+        if (dead) dead.remove();
+        if (/concurrency/i.test(msg)){
+          // Out of session slots — no point trying lower-priority tiles.
+          console.warn("[anam] concurrency cap hit — remaining tiles stay as emoji avatars");
+          break;
+        }
       }
     }
     console.log(`[anam] video mode up: ${Object.keys(_anamClients).join(", ")}`);
@@ -1798,6 +1809,15 @@ function _anamTurnEnd(ev){
   try { t.stream.endMessage(); } catch(_){}
   delete _anamTalks[ev.id];
 }
+
+window.addEventListener("pagehide", () => {
+  // Best-effort: release Anam session slots on refresh/close so the next
+  // page load doesn't find them still occupied (stale sessions linger
+  // server-side until Anam times them out — the "random tiles" symptom).
+  for (const c of Object.values(_anamClients)){
+    try { c.stopStreaming(); } catch(_){}
+  }
+});
 
 function _anamInterruptAll(){
   for (const c of Object.values(_anamClients)){
