@@ -60,13 +60,31 @@ ELEVEN_API_KEY = os.environ["ELEVEN_API_KEY"]
 # Cartesia key: env var wins; fallback is committed for demo expedience.
 # ROTATE THIS in the Cartesia dashboard right after the demo — it's public.
 CARTESIA_API_KEY = os.environ.get("CARTESIA_API_KEY", "sk_car_uAPGrHGAx7CbGAKEmBPiXZ")
-# LiveAvatar (HeyGen) — video-avatar mode. Env var wins; fallback baked in
-# for demo expedience (same call as Cartesia above). Rotate post-demo.
-# Defaults for avatar_id / context_id are LiveAvatar's quickstart sandbox demo.
-LIVEAVATAR_API_KEY = os.environ.get("LIVEAVATAR_API_KEY", "8d9ab866-6069-11f1-8d28-066a7fa2e369")
-LIVEAVATAR_AVATAR_ID = os.environ.get("LIVEAVATAR_AVATAR_ID", "65f9e3c9-d48b-4118-b73a-4ae2e3cbb8f0")
-LIVEAVATAR_CONTEXT_ID = os.environ.get("LIVEAVATAR_CONTEXT_ID", "158f5d55-2d4f-11f1-8d28-066a7fa2e369")
-LIVEAVATAR_SANDBOX = os.environ.get("LIVEAVATAR_SANDBOX", "1") != "0"
+# Anam — video-avatar mode. Each enabled persona gets its own concurrent
+# Anam WebRTC session; OUR orchestrator + Claude drive every word (llmId
+# CUSTOMER_CLIENT_V1) and Anam does TTS + face render in the browser.
+# Env var wins; fallback baked in for demo expedience (same pattern as
+# Cartesia above). Rotate post-demo.
+ANAM_API_KEY = os.environ.get(
+    "ANAM_API_KEY",
+    "Mzc3MmRkNzAtM2ViNi00NWRhLWE1MTMtZGEwNDYzMDdkMjI1OlQrR3Z3dDhaczk2a3Y0Y3pIU1dVemlQTGo2SVZGUHRYYitTRnNqMmRUY0U9",
+)
+# Per-persona avatar/voice picks from the account's stock gallery (verified
+# via GET /v1/avatars + /v1/voices on 2026-06-05). Override via env vars.
+ANAM_PERSONA_CONFIG = {
+    "doctor": {  # Dr. Vale — clean professional
+        "avatar_id": os.environ.get("ANAM_AVATAR_DOCTOR", "edf6fdcb-acab-44b8-b974-ded72665ee26"),  # Mia, studio
+        "voice_id":  os.environ.get("ANAM_VOICE_DOCTOR",  "90a1acd3-4fc0-11f1-84b0-52bacf74fa75"),  # Rachel — Polished Presence
+    },
+    "holistic": {  # Sage Brightwater — warm/relaxed
+        "avatar_id": os.environ.get("ANAM_AVATAR_HOLISTIC", "071b0286-4cce-4808-bee2-e642f1062de3"),  # Liv, home
+        "voice_id":  os.environ.get("ANAM_VOICE_HOLISTIC",  "90313ddc-4fc0-11f1-84b0-52bacf74fa75"),  # Amanda — Warm Guide
+    },
+    "lawyer": {  # Counsel Reed — suited/formal
+        "avatar_id": os.environ.get("ANAM_AVATAR_LAWYER", "6cc28442-cccd-42a8-b6e4-24b7210a09c5"),  # Gabriel, table
+        "voice_id":  os.environ.get("ANAM_VOICE_LAWYER",  "91b4ce0f-4fc0-11f1-84b0-52bacf74fa75"),  # Archie — GB male
+    },
+}
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_MODEL = "claude-sonnet-4-5-20250929"
@@ -915,11 +933,19 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
             provider_for_turn = _tts_provider
 
             # Pick the audio delivery path based on provider:
+            # - video (Anam) → NO server-side TTS at all. We stream raw text
+            #   deltas over SSE; the frontend pipes them into that persona's
+            #   Anam TalkMessageStream and the avatar does TTS + face render.
             # - cartesia-agents → raw PCM over WebSocket → Web Audio API in
             #   the browser. Cartesia's reference low-latency pattern.
             # - cartesia (5-persona) and elevenlabs → existing chunked-HTTP
             #   path to a browser <audio> element. (audio/wav or audio/mpeg.)
-            if provider_for_turn == "cartesia-agents":
+            if provider_for_turn == "video":
+                audio_url = None
+                audio_format = "anam_text"
+                audio_sample_rate = None
+                stream = None
+            elif provider_for_turn == "cartesia-agents":
                 audio_url = f"/turn-audio-ws/{turn_id}"
                 audio_format = "pcm_s16le"
                 audio_sample_rate = CARTESIA_SAMPLE_RATE
@@ -934,7 +960,8 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
                 audio_format = "mp3"
                 audio_sample_rate = None
                 stream = AudioStream(mime="audio/mpeg")
-            _audio_streams[turn_id] = stream
+            if stream is not None:
+                _audio_streams[turn_id] = stream
             text_buf: list[str] = []
 
             # Tell the frontend immediately so it can open the audio stream
@@ -955,24 +982,43 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
 
             # Phase D: in parallel, ask Haiku if any other panelist would
             # cut in with a brief reaction. Fire-and-forget — never blocks
-            # the main chain progress.
-            asyncio.create_task(_maybe_react(who, transcript_ctx, turn_id))
+            # the main chain progress. Skipped in video mode: reactions are
+            # audio-only (server-side TTS) and Anam owns the voices there.
+            if provider_for_turn != "video":
+                asyncio.create_task(_maybe_react(who, transcript_ctx, turn_id))
 
             _diag_log(_diag_chain, kind="tts_provider", id=turn_id, who=persona.key, provider=provider_for_turn)
 
-            try:
-                async for audio_chunk in _stream_tts(
-                    persona,
-                    _anthropic_stream(persona, transcript_ctx),
-                    text_buf,
-                    provider_for_turn,
-                ):
-                    await stream.push(audio_chunk)
-            except Exception as e:
-                log.exception("streaming pipeline failed in chain turn %d (%s)", i, provider_for_turn)
-                await _publish({"type": "error", "text": f"stream: {e}"})
-            finally:
-                await stream.push(None)  # EOS — releases the HTTP handler
+            if provider_for_turn == "video":
+                # Text-only path: stream Claude tokens straight over SSE.
+                # The frontend routes each delta into this persona's Anam
+                # TalkMessageStream — the avatar speaks as we generate.
+                try:
+                    async for token in _anthropic_stream(persona, transcript_ctx):
+                        text_buf.append(token)
+                        await _publish({
+                            "type": "text_delta",
+                            "id": turn_id,
+                            "persona_key": persona.key,
+                            "delta": token,
+                        })
+                except Exception as e:
+                    log.exception("text streaming failed in chain turn %d (video)", i)
+                    await _publish({"type": "error", "text": f"stream: {e}"})
+            else:
+                try:
+                    async for audio_chunk in _stream_tts(
+                        persona,
+                        _anthropic_stream(persona, transcript_ctx),
+                        text_buf,
+                        provider_for_turn,
+                    ):
+                        await stream.push(audio_chunk)
+                except Exception as e:
+                    log.exception("streaming pipeline failed in chain turn %d (%s)", i, provider_for_turn)
+                    await _publish({"type": "error", "text": f"stream: {e}"})
+                finally:
+                    await stream.push(None)  # EOS — releases the HTTP handler
 
             # text_buf is populated by _stream_tts for every provider — the
             # cartesia-agents path appends pipecat_panel's full reply text;
@@ -998,6 +1044,13 @@ async def _run_chain(forced_first_speaker: str | None = None) -> None:
             # Streaming pipeline already provides natural pacing; no sleep
             # needed. Orchestrator for next turn runs while audio is still
             # playing on the frontend.
+            if provider_for_turn == "video":
+                # Except in video mode: there is no server-side audio stream
+                # to pace the chain, so without a wait the next panelist's
+                # deltas would hit a second avatar while this one is still
+                # mid-sentence. Rough speech-time estimate at ~150 wpm.
+                est = min(24.0, max(1.5, len(reply_text.split()) / 2.5))
+                await asyncio.sleep(est)
     except asyncio.CancelledError:
         log.info("chain cancelled (human interrupted)")
         # Release any in-flight audio stream so the HTTP handler returns
@@ -1424,72 +1477,89 @@ async def handle_avatar(request: web.Request) -> web.FileResponse:
 
 
 # ---------------------------------------------------------------------------
-# LiveAvatar (HeyGen) — video-mode session endpoint
+# Anam — video-mode session endpoint
 # ---------------------------------------------------------------------------
-# Mints a short-lived embed URL on demand. Sandbox mode keeps credits at zero
-# for the demo. The browser receives just the URL — the API key never leaves
-# this process. POST is preferred so the URL isn't cached or logged in proxies.
+# Mints one short-lived Anam session token PER video-mode persona, in
+# parallel. The browser opens N concurrent WebRTC sessions (one avatar per
+# tile) with llmId CUSTOMER_CLIENT_V1 — Anam never runs its own LLM/STT;
+# our orchestrator streams every word over SSE and the frontend pipes it
+# into each avatar's TalkMessageStream. The API key never leaves this
+# process — the browser only ever sees the ephemeral session tokens.
 
-LIVEAVATAR_EMBED_URL = "https://api.liveavatar.com/v2/embeddings"
+ANAM_SESSION_TOKEN_URL = "https://api.anam.ai/v1/auth/session-token"
 
 
-async def handle_video_session(request: web.Request) -> web.Response:
-    """Create a LiveAvatar embed session, return the iframe URL.
+async def _mint_anam_token(key: str) -> tuple[str, str | None, str | None]:
+    """Mint one ephemeral session token for one persona.
 
-    Frontend calls this when the user switches to "video" mode. We POST to
-    LiveAvatar's /v2/embeddings with our API key (server-side only), and
-    proxy back the embed URL. Sandbox mode by default — no credits consumed.
+    Returns (persona_key, token_or_None, error_or_None).
     """
-    if not LIVEAVATAR_API_KEY:
-        return web.json_response(
-            {"error": "LIVEAVATAR_API_KEY not configured on the server"},
-            status=503,
-        )
-    try:
-        body = await request.json() if request.can_read_body else {}
-    except Exception:
-        body = {}
+    persona = PERSONAS[key]
+    cfg = ANAM_PERSONA_CONFIG.get(key)
+    if cfg is None:
+        return key, None, f"no ANAM_PERSONA_CONFIG entry for '{key}'"
     payload = {
-        "avatar_id":  body.get("avatar_id")  or LIVEAVATAR_AVATAR_ID,
-        "context_id": body.get("context_id") or LIVEAVATAR_CONTEXT_ID,
-        "is_sandbox": bool(body.get("is_sandbox", LIVEAVATAR_SANDBOX)),
+        "personaConfig": {
+            "name": persona.name,
+            "avatarId": cfg["avatar_id"],
+            "voiceId": cfg["voice_id"],
+            "llmId": "CUSTOMER_CLIENT_V1",  # we drive every word
+        }
     }
     headers = {
-        "X-API-KEY": LIVEAVATAR_API_KEY,
+        "Authorization": f"Bearer {ANAM_API_KEY}",
         "Content-Type": "application/json",
-        "Accept": "application/json",
     }
     try:
         async with _http.post(
-            LIVEAVATAR_EMBED_URL, json=payload, headers=headers,
+            ANAM_SESSION_TOKEN_URL, json=payload, headers=headers,
             timeout=aiohttp.ClientTimeout(total=15),
         ) as r:
             txt = await r.text()
             if r.status != 200:
-                log.warning("liveavatar embed %d: %s", r.status, txt[:300])
-                return web.json_response(
-                    {"error": f"liveavatar {r.status}", "details": txt[:300]},
-                    status=502,
-                )
-            data = json.loads(txt)
-            url = (data.get("data") or {}).get("url")
-            if not url:
-                return web.json_response(
-                    {"error": "no url in liveavatar response", "raw": data},
-                    status=502,
-                )
-            log.info("liveavatar session created (sandbox=%s)", payload["is_sandbox"])
-            return web.json_response({
-                "url": url,
-                "avatar_id": payload["avatar_id"],
-                "context_id": payload["context_id"],
-                "is_sandbox": payload["is_sandbox"],
-            })
+                log.warning("anam session-token %s %d: %s", key, r.status, txt[:300])
+                return key, None, f"anam {r.status}: {txt[:200]}"
+            token = json.loads(txt).get("sessionToken")
+            if not token:
+                return key, None, "no sessionToken in anam response"
+            return key, token, None
     except asyncio.TimeoutError:
-        return web.json_response({"error": "liveavatar timeout"}, status=504)
-    except Exception as e:
-        log.exception("liveavatar embed call failed")
-        return web.json_response({"error": str(e)}, status=500)
+        return key, None, "anam timeout"
+    except Exception as e:  # noqa: BLE001
+        log.exception("anam session-token call failed for %s", key)
+        return key, None, str(e)
+
+
+async def handle_video_session(request: web.Request) -> web.Response:
+    """Mint Anam session tokens for every video-mode persona, in parallel.
+
+    Response: {"tokens": {"doctor": "<jwt>", ...}, "errors": {...}|null}.
+    Partial success returns 200 with whatever minted plus per-key errors —
+    the unknown here is the account's concurrent-session allowance, and a
+    2-of-3 panel still demos better than a hard failure.
+    """
+    if not ANAM_API_KEY:
+        return web.json_response(
+            {"error": "ANAM_API_KEY not configured on the server"},
+            status=503,
+        )
+    keys = [k for k in PERSONA_SETS.get("video", ()) if k in PERSONAS]
+    if not keys:
+        return web.json_response(
+            {"error": "PERSONA_SETS['video'] is empty — nothing to mint"},
+            status=500,
+        )
+    results = await asyncio.gather(*(_mint_anam_token(k) for k in keys))
+    tokens = {k: tok for k, tok, err in results if tok}
+    errors = {k: err for k, tok, err in results if err}
+    if not tokens:
+        return web.json_response(
+            {"error": "all anam session-token mints failed", "errors": errors},
+            status=502,
+        )
+    log.info("anam video session: minted %d/%d tokens (%s)",
+             len(tokens), len(keys), ", ".join(tokens))
+    return web.json_response({"tokens": tokens, "errors": errors or None})
 
 
 # ---------------------------------------------------------------------------
@@ -1573,7 +1643,7 @@ async def handle_tts_provider_get(request: web.Request) -> web.Response:
         "provider": _tts_provider,
         "available": ["elevenlabs", "cartesia", "cartesia-agents", "video"],
         "cartesia_configured": bool(CARTESIA_API_KEY),
-        "liveavatar_configured": bool(LIVEAVATAR_API_KEY),
+        "anam_configured": bool(ANAM_API_KEY),
     })
 
 
@@ -1594,9 +1664,9 @@ async def handle_tts_provider_set(request: web.Request) -> web.Response:
             {"error": "CARTESIA_API_KEY env var not set on the server."},
             status=400,
         )
-    if p == "video" and not LIVEAVATAR_API_KEY:
+    if p == "video" and not ANAM_API_KEY:
         return web.json_response(
-            {"error": "LIVEAVATAR_API_KEY env var not set on the server."},
+            {"error": "ANAM_API_KEY env var not set on the server."},
             status=400,
         )
     _tts_provider = p
