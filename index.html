@@ -88,7 +88,7 @@
   .tile video.anam-feed{position:absolute;inset:0;width:100%;height:100%;
     object-fit:cover;background:#000;z-index:0;}
   .tile.video-tile .avatar{visibility:hidden;}
-  .tile.video-tile .nameplate{position:relative;z-index:1;}
+  .tile.video-tile .nameplate{z-index:2;}
   .tile.video-tile .toggle{z-index:2;}
   /* Thick colored border on the speaking avatar — base layer. */
   .tile.speaking[data-key="vale"]     .avatar{border-color:var(--vale);   border-width:4px;}
@@ -289,6 +289,14 @@
   @media(max-width:900px){
     body{grid-template-columns:1fr;grid-template-rows:1fr;overflow:hidden;}
 
+    /* Video mode: 2-up grid, odd last tile spans full width (no empty cell).
+       Avatar feeds fill their tiles via object-fit:cover regardless of the
+       tile's aspect ratio, so portrait phone tiles still frame faces well. */
+    body.video-mode #panel-grid{grid-template-columns:1fr 1fr;
+      grid-auto-rows:minmax(120px,1fr);}
+    body.video-mode #panel-grid .tile:nth-child(3):last-child{grid-column:1 / -1;}
+    body.video-mode #panel-grid .tile:nth-child(odd):last-child{grid-column:1 / -1;}
+
     aside{position:fixed;inset:0;z-index:60;transform:translateY(100%);
       transition:transform .3s ease;border-left:none;border-radius:18px 18px 0 0;
       box-shadow:0 -8px 40px rgba(0,0,0,.5);}
@@ -336,6 +344,7 @@
 
     #stage{padding:8px;gap:8px;}
     #panel-grid{grid-template-columns:repeat(2,1fr);gap:8px;}
+    body.video-mode #panel-grid .tile:nth-child(odd):last-child{grid-column:1 / -1;}
 
     .tile{border-radius:10px;}
     .tile .avatar{min-width:42px;max-width:70px;width:35%;}
@@ -1703,6 +1712,7 @@ function _videoError(msg){
 
 async function _enterVideoMode(){
   _videoMode = true;
+  document.body.classList.add("video-mode");
   _stopAllAudio();
   if (_videoStage) _videoStage.hidden = true;
   try {
@@ -1770,6 +1780,7 @@ async function _enterVideoMode(){
 function _exitVideoMode(){
   if (!_videoMode) return;
   _videoMode = false;
+  document.body.classList.remove("video-mode");
   for (const [key, c] of Object.entries(_anamClients)){
     try { c.stopStreaming(); } catch(_){}
   }
