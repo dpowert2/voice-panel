@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#0b0d10" />
-<title>Agent · Quantum — Analyst Brief</title>
+<title>Agent · Quantum — Analyst Timeline</title>
 <style>
   :root {
     --bg:        #0b0d10;
@@ -19,39 +19,27 @@
     --internal:  #9eccff;
     --flag:      #f5d272;
     --mono: "SF Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
-    --dock-h: 124px;
   }
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
+  html, body { margin: 0; height: 100%; }
   body {
-    margin: 0; background: var(--bg); color: var(--ink);
+    background: var(--bg); color: var(--ink); overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
-    padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom));
   }
+  #app { display: flex; flex-direction: column; height: 100dvh;
+    padding: max(12px, env(safe-area-inset-top)) 0 max(10px, env(safe-area-inset-bottom)); }
 
   /* ---------- header ---------- */
-  header {
-    position: sticky; top: 0; z-index: 30;
-    display: flex; align-items: center; justify-content: space-between; gap: 14px;
-    padding: 12px max(16px, env(safe-area-inset-left)) 12px max(16px, env(safe-area-inset-left));
-    background: rgba(11,13,16,.86); backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--line);
-  }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    padding: 0 18px 10px; }
   .brand { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-  .eyebrow {
-    display: flex; align-items: center; gap: 7px; font-family: var(--mono);
-    font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-dim);
-  }
-  .live-dot {
-    width: 7px; height: 7px; border-radius: 50%; background: var(--research); flex: none;
-    box-shadow: 0 0 0 0 rgba(239,107,107,.5); animation: pulse 1.8s infinite;
-  }
-  @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(239,107,107,.45); }
-    70% { box-shadow: 0 0 0 6px rgba(239,107,107,0); }
-    100% { box-shadow: 0 0 0 0 rgba(239,107,107,0); }
-  }
+  .eyebrow { display: flex; align-items: center; gap: 7px; font-family: var(--mono);
+    font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-dim); }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--research); flex: none;
+    box-shadow: 0 0 0 0 rgba(239,107,107,.5); animation: pulse 1.8s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239,107,107,.45); }
+    70% { box-shadow: 0 0 0 6px rgba(239,107,107,0); } 100% { box-shadow: 0 0 0 0 rgba(239,107,107,0); } }
   .brand h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
   .brand h1 .topic { color: var(--internal); }
   .conviction { text-align: right; flex: none; }
@@ -59,530 +47,499 @@
   .conviction .l { font-family: var(--mono); font-size: 9px; letter-spacing: .12em;
     text-transform: uppercase; color: var(--ink-faint); margin-top: 2px; }
 
-  main { max-width: 760px; margin: 0 auto; padding: 22px 16px 8px; }
-
-  .sec-label {
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
-    color: var(--ink-faint); margin: 30px 2px 12px; display: flex; align-items: center; gap: 9px;
-  }
-  .sec-label::after { content: ""; flex: 1; height: 1px; background: var(--line); }
-
-  /* ---------- thesis hero ---------- */
-  .thesis {
-    border: 1px solid var(--line); border-radius: 14px; padding: 22px 22px 20px;
-    background: linear-gradient(160deg, var(--panel2), var(--panel));
-    position: relative; overflow: hidden;
-  }
-  .thesis::before {
-    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-    background: linear-gradient(180deg, var(--internal), var(--news));
-  }
-  .thesis .tag { font-family: var(--mono); font-size: 10px; letter-spacing: .16em;
+  /* ---------- thesis banner ---------- */
+  .thesis { margin: 0 18px 12px; border: 1px solid var(--line); border-radius: 12px;
+    padding: 13px 16px; background: linear-gradient(160deg, var(--panel2), var(--panel));
+    position: relative; overflow: hidden; }
+  .thesis::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: linear-gradient(180deg, var(--internal), var(--news)); }
+  .thesis .tag { font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em;
     text-transform: uppercase; color: var(--internal); }
-  .thesis .stmt { font-size: 20px; line-height: 1.42; font-weight: 550; margin: 11px 0 0;
-    letter-spacing: -.01em; }
+  .thesis .stmt { font-size: 14.5px; line-height: 1.5; font-weight: 500; margin: 6px 0 0; }
   .thesis .stmt b { color: #fff; font-weight: 650; }
-  .thesis .meta { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 16px;
-    font-family: var(--mono); font-size: 11px; color: var(--ink-faint); align-items: center; }
-  .thesis .meta .val { color: var(--ink); }
-  .walk {
-    margin-top: 18px; display: inline-flex; align-items: center; gap: 9px; cursor: pointer;
-    border: 1px solid #34506e; background: rgba(158,204,255,.08); color: #cfe4ff;
-    border-radius: 9px; padding: 11px 16px; font-size: 13.5px; font-weight: 600;
-    font-family: var(--mono); letter-spacing: .02em; transition: background .15s, border-color .15s;
-  }
+  .thesis .sub { margin-top: 9px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint);
+    display: flex; gap: 14px; flex-wrap: wrap; }
+  .thesis .sub b { color: var(--ink); }
+
+  /* ---------- timeline ---------- */
+  .tl-wrap { position: relative; margin: 0 18px; }
+  #timeline { display: block; width: 100%; height: clamp(120px, 20vh, 190px);
+    cursor: pointer; touch-action: pan-x; }
+  .tl-hint { position: absolute; right: 6px; top: 4px; font-family: var(--mono);
+    font-size: 9.5px; color: var(--ink-faint); pointer-events: none; }
+
+  /* ---------- horizontal card track ---------- */
+  .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 10px; }
+  #track { flex: 1; min-height: 0; display: flex; gap: 16px; align-items: stretch;
+    overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
+    position: relative; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  #track::-webkit-scrollbar { display: none; }
+  .card { scroll-snap-align: center; flex: 0 0 min(520px, 86vw); display: flex; flex-direction: column;
+    border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow: hidden;
+    transition: border-color .3s, box-shadow .3s, opacity .3s, transform .3s; opacity: .45; }
+  .card.active { opacity: 1; border-color: var(--accent); transform: translateY(-2px);
+    box-shadow: 0 0 0 1px var(--accent), 0 26px 60px -34px rgba(0,0,0,.9); }
+  .card .c-pad { padding: 16px 17px 0; }
+  .card .c-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 10px; }
+  .badge { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-dim);
+    display: inline-flex; align-items: center; gap: 5px; }
+  .badge.flag { color: #1a1407; background: var(--flag); border-color: var(--flag); font-weight: 700; }
+  .badge.risk { color: var(--flag); background: rgba(245,210,114,.08); border-color: #4a4327; }
+  .badge.date { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .card h3 { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.33; letter-spacing: -.01em; }
+  .card .body { margin: 8px 0 0; font-size: 13px; line-height: 1.55; color: #c2c9d4; }
+  .card .c-conf { display: flex; align-items: center; gap: 9px; margin: 13px 0 14px; }
+  .card .c-conf .bar { flex: 1; max-width: 200px; height: 5px; border-radius: 4px; background: var(--panel2); overflow: hidden; }
+  .card .c-conf .fill { height: 100%; border-radius: 4px; background: var(--accent); }
+  .card .c-conf .pct { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
+  .card .c-conf .word { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-faint); }
+
+  .ev-head { font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-faint); padding: 0 17px; display: flex; align-items: center; gap: 8px; }
+  .ev-head::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .ev-list { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 17px 16px; display: flex;
+    flex-direction: column; gap: 9px; scrollbar-width: thin; }
+  .ev { border: 1px solid var(--line); border-radius: 9px; padding: 10px 11px; background: var(--panel2); }
+  .ev .eh { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .ev .sd { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .ev .stream { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; }
+  .ev .origin { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); margin-left: auto; text-align: right; }
+  .ev .q { font-size: 12.5px; line-height: 1.5; color: #c8cfd9; }
+  .ev mark { background: transparent; color: var(--ink); padding: 0 1px; border-radius: 3px;
+    border-bottom: 1px dashed var(--ink-faint); }
+  .card.active .ev mark { background: color-mix(in srgb, var(--accent) 24%, transparent);
+    border-bottom-color: transparent; color: #fff; }
+
+  /* ---------- controls ---------- */
+  .controls { display: flex; align-items: center; gap: 12px; padding: 12px 18px 2px; }
+  .nav { cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    width: 38px; height: 38px; border-radius: 9px; font-size: 16px; flex: none;
+    display: flex; align-items: center; justify-content: center; transition: border-color .15s, background .15s; }
+  .nav:hover { border-color: #38424f; background: var(--panel2); }
+  .dots { flex: 1; display: flex; justify-content: center; gap: 7px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); cursor: pointer;
+    transition: background .2s, transform .2s; }
+  .dot.on { background: var(--accent, var(--internal)); transform: scale(1.25); }
+  .walk { cursor: pointer; border: 1px solid #34506e; background: rgba(158,204,255,.08); color: #cfe4ff;
+    border-radius: 9px; padding: 0 15px; height: 38px; font-size: 12.5px; font-weight: 600; flex: none;
+    font-family: var(--mono); letter-spacing: .02em; display: inline-flex; align-items: center; gap: 8px;
+    transition: background .15s, border-color .15s; }
   .walk:hover { background: rgba(158,204,255,.14); border-color: #436a92; }
   .walk.running { border-color: #5a3b3d; background: rgba(239,107,107,.1); color: #f3a8a8; }
 
-  /* ---------- insight cards ---------- */
-  .insight {
-    border: 1px solid var(--line); border-radius: 13px; padding: 17px 18px;
-    background: var(--panel); margin-bottom: 12px; position: relative;
-    transition: border-color .25s, box-shadow .25s, transform .25s;
-  }
-  .insight::before {
-    content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px;
-    border-radius: 3px; background: var(--accent, var(--line)); opacity: .65;
-  }
-  .insight.flagged { background: linear-gradient(120deg, rgba(245,210,114,.05), var(--panel) 60%); }
-  .insight.flagged::before { background: var(--flag); opacity: 1; }
-  .insight.active {
-    border-color: var(--accent, var(--internal));
-    box-shadow: 0 0 0 1px var(--accent, var(--internal)), 0 20px 50px -30px rgba(0,0,0,.9);
-    transform: translateY(-1px);
-  }
-  .insight .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 9px; }
-  .badge {
-    font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
-    padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-dim);
-    display: inline-flex; align-items: center; gap: 5px;
-  }
-  .badge.flag { color: #1a1407; background: var(--flag); border-color: var(--flag); font-weight: 700; }
-  .badge.risk { color: var(--flag); background: rgba(245,210,114,.08); border-color: #4a4327; }
-  .badge .sd { width: 7px; height: 7px; border-radius: 50%; }
-  .insight h3 { margin: 0; font-size: 16.5px; font-weight: 600; line-height: 1.34; letter-spacing: -.01em; }
-  .insight p { margin: 8px 0 0; font-size: 13.5px; line-height: 1.55; color: #c2c9d4; }
-  .insight .foot { display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; margin-top: 14px; flex-wrap: wrap; }
-  .conf { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; }
-  .conf .bar { flex: 1; min-width: 80px; max-width: 180px; height: 5px; border-radius: 4px;
-    background: var(--panel2); overflow: hidden; }
-  .conf .fill { height: 100%; border-radius: 4px; background: var(--accent, var(--internal)); }
-  .conf .pct { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
-  .conf .word { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--ink-faint); }
-  .trace {
-    cursor: pointer; border: 1px solid var(--line); background: var(--panel2); color: var(--ink);
-    border-radius: 8px; padding: 8px 13px; font-size: 12px; font-family: var(--mono);
-    display: inline-flex; align-items: center; gap: 7px; transition: border-color .15s, background .15s;
-    flex: none;
-  }
-  .trace:hover { border-color: #38424f; background: #20262f; }
-  .trace .c { color: var(--ink-faint); }
-
-  /* ---------- evidence ledger ---------- */
-  .evidence {
-    border: 1px solid var(--line); border-radius: 12px; padding: 15px 16px;
-    background: var(--panel); margin-bottom: 10px; position: relative;
-    transition: border-color .3s, background .3s, box-shadow .3s, opacity .3s;
-  }
-  .evidence .ehead { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
-  .evidence .sd { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
-  .evidence .stream { font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
-    text-transform: uppercase; color: var(--accent); font-weight: 600; }
-  .evidence .origin { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint);
-    margin-left: auto; text-align: right; }
-  .evidence .quote { font-size: 14px; line-height: 1.58; color: #c8cfd9; }
-  .evidence mark {
-    background: transparent; color: var(--ink); padding: 0 1px; border-radius: 3px;
-    border-bottom: 1px dashed var(--ink-faint); transition: background .3s, color .3s, border-color .3s;
-  }
-  .evidence .supports { margin-top: 10px; font-family: var(--mono); font-size: 10.5px;
-    color: var(--ink-faint); display: none; }
-  .evidence.dim { opacity: .4; }
-  .evidence.active {
-    border-color: var(--accent); background: var(--panel2);
-    box-shadow: 0 0 0 1px var(--accent), 0 18px 44px -28px rgba(0,0,0,.85);
-  }
-  .evidence.active mark { background: color-mix(in srgb, var(--accent) 26%, transparent);
-    border-bottom-color: transparent; color: #fff; }
-  .evidence.active .supports { display: block; color: var(--accent); }
-  .evidence.flash { animation: flash .9s ease; }
-  @keyframes flash {
-    0% { box-shadow: 0 0 0 0 var(--accent), 0 0 0 0 transparent; }
-    35% { box-shadow: 0 0 0 1px var(--accent), 0 0 26px -2px var(--accent); }
-    100% { box-shadow: 0 0 0 1px var(--accent), 0 18px 44px -28px rgba(0,0,0,.85); }
-  }
-
-  /* ---------- bottom dock (still researching) ---------- */
-  #dock {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: var(--dock-h);
-    padding: 10px 16px calc(8px + env(safe-area-inset-bottom));
-    background: rgba(13,16,20,.93); backdrop-filter: blur(12px);
-    border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px;
-  }
-  .dock-head { display: flex; align-items: center; gap: 12px; font-family: var(--mono);
-    font-size: 11px; color: var(--ink-dim); }
-  #dock-status { display: flex; align-items: center; gap: 7px; min-width: 0;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #dock-status b { color: var(--ink); font-weight: 600; }
-  .dock-legend { margin-left: auto; display: flex; gap: 12px; flex: none; }
-  .dock-legend span { display: inline-flex; align-items: center; gap: 5px; font-size: 10px;
-    color: var(--ink-faint); transition: opacity .3s; }
-  .dock-legend i { width: 7px; height: 7px; border-radius: 50%; }
-  .dock-legend .off { opacity: .3; }
-  #spark { flex: 1; width: 100%; display: block; }
-
-  /* ---------- narrator bar ---------- */
-  #narrator {
-    position: fixed; left: 50%; bottom: calc(var(--dock-h) + 14px + env(safe-area-inset-bottom));
+  /* ---------- narrator ---------- */
+  #narrator { position: fixed; left: 50%; bottom: calc(86px + env(safe-area-inset-bottom));
     transform: translateX(-50%) translateY(10px); z-index: 45; max-width: min(620px, 92vw);
-    background: var(--panel2); border: 1px solid #34506e; border-radius: 11px;
-    padding: 11px 15px; display: flex; align-items: center; gap: 12px;
-    box-shadow: 0 22px 50px -24px rgba(0,0,0,.9); opacity: 0; pointer-events: none;
-    transition: opacity .25s, transform .25s;
-  }
+    background: var(--panel2); border: 1px solid #34506e; border-radius: 11px; padding: 11px 15px;
+    display: flex; align-items: center; gap: 12px; box-shadow: 0 22px 50px -24px rgba(0,0,0,.9);
+    opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; }
   #narrator.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
-  #narrator .step { font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--internal); flex: none; }
-  #narrator .txt { font-size: 13px; line-height: 1.4; color: var(--ink); }
+  #narrator .step { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--internal); flex: none; }
+  #narrator .txt { font-size: 13px; line-height: 1.4; }
   #narrator .stop { margin-left: auto; flex: none; cursor: pointer; border: 1px solid var(--line);
     background: var(--panel); color: var(--ink-dim); border-radius: 7px; padding: 6px 11px;
     font-family: var(--mono); font-size: 11px; }
   #narrator .stop:hover { color: var(--ink); border-color: #38424f; }
 
   @media (max-width: 600px) {
-    :root { --dock-h: 104px; }
+    header { padding: 0 14px 8px; }
     .brand h1 { font-size: 14px; }
-    .thesis .stmt { font-size: 17px; }
-    .insight h3 { font-size: 15px; }
-    main { padding: 16px 13px 8px; }
-    .dock-legend span span { display: none; }   /* dot-only legend on phones */
+    .thesis { margin: 0 14px 10px; }
+    .thesis .stmt { font-size: 13px; }
+    .tl-wrap { margin: 0 14px; }
+    .controls { padding: 10px 14px 2px; }
+    .card h3 { font-size: 15.5px; }
   }
 </style>
 </head>
 <body>
+<div id="app">
   <header>
     <div class="brand">
-      <div class="eyebrow"><span class="live-dot"></span> Agentic Analyst · Brief</div>
+      <div class="eyebrow"><span class="live-dot"></span> Agentic Analyst · Research Timeline</div>
       <h1>Agent: <span class="topic">Quantum Computing</span></h1>
     </div>
-    <div class="conviction">
-      <div class="v" id="hero-conf">81%</div>
-      <div class="l">Thesis conviction</div>
-    </div>
+    <div class="conviction"><div class="v" id="hero-conf">81%</div><div class="l">Thesis conviction</div></div>
   </header>
 
-  <main>
-    <div class="sec-label">The call</div>
-    <section class="thesis" id="thesis">
-      <div class="tag">Investment thesis</div>
-      <p class="stmt" id="thesis-stmt"></p>
-      <div class="meta">
-        <span>As of <span class="val">Jul 2025</span></span>
-        <span>Synthesized from <span class="val" id="thesis-srcn">0</span> sources</span>
-        <span><span class="val" id="thesis-insn">0</span> supporting insights</span>
-      </div>
-      <button class="walk" id="walk"><span>▶</span> Walk me through the analysis</button>
-    </section>
-
-    <div class="sec-label">Key insights · ranked by conviction</div>
-    <section id="insights"></section>
-
-    <div class="sec-label">Evidence ledger · what the agent read</div>
-    <section id="evidence"></section>
-  </main>
-
-  <div id="narrator">
-    <span class="step" id="narr-step">Step</span>
-    <span class="txt" id="narr-txt"></span>
-    <button class="stop" id="narr-stop">Stop</button>
-  </div>
-
-  <div id="dock">
-    <div class="dock-head">
-      <span id="dock-status"><span class="live-dot"></span> Researching… <b id="dock-srcn">0</b> sources scanned · <b id="dock-insn">0</b> insights</span>
-      <span class="dock-legend">
-        <span data-k="research"><i style="background:var(--research)"></i><span>Research</span></span>
-        <span data-k="news"><i style="background:var(--news)"></i><span>News</span></span>
-        <span data-k="internal"><i style="background:var(--internal)"></i><span>Internal</span></span>
-      </span>
+  <div class="thesis">
+    <div class="tag">Investment thesis</div>
+    <p class="stmt" id="thesis-stmt"></p>
+    <div class="sub">
+      <span>Window <b>Jul–Dec 2025</b></span>
+      <span><b id="sub-srcn">0</b> sources read</span>
+      <span><b id="sub-insn">0</b> insights surfaced</span>
     </div>
-    <canvas id="spark"></canvas>
   </div>
+
+  <div class="tl-wrap">
+    <canvas id="timeline"></canvas>
+    <div class="tl-hint">tap a node ↑ · swipe cards ↓</div>
+  </div>
+
+  <div class="stage">
+    <div id="track"></div>
+  </div>
+
+  <div class="controls">
+    <button class="nav" id="prev" aria-label="Previous">‹</button>
+    <div class="dots" id="dots"></div>
+    <button class="nav" id="next" aria-label="Next">›</button>
+    <button class="walk" id="walk"><span>▶</span> Walk me through it</button>
+  </div>
+</div>
+
+<div id="narrator">
+  <span class="step" id="narr-step">Step</span>
+  <span class="txt" id="narr-txt"></span>
+  <button class="stop" id="narr-stop">Stop</button>
+</div>
 
 <script>
 "use strict";
 
 // ----------------------------------------------------------------------------
-//  Synthetic content — agentic analyst brief (demo only, nothing real)
+//  Synthetic content (demo only)
 // ----------------------------------------------------------------------------
 const STREAM = {
   research: { c:"#ef6b6b", label:"Research" },
   news:     { c:"#7fd1a1", label:"News" },
   internal: { c:"#9eccff", label:"Internal · Fidelity" },
 };
+const KEYS = ["research", "news", "internal"];
 
 const THESIS = {
   conf: 0.81,
-  stmt: `Quantum is being <b>repriced in plain sight</b>: regulation is quietly turning it from a moonshot into a <b>compliance mandate</b>, while the hardest engineering — and the most durable margin — concentrates <b>upstream in the cryogenics & photonics supply chain</b>, not the headline chipmakers. The asymmetric position sits upstream, sized for an <b>18–30 month</b> fault-tolerance timeline and hedged against a hype-driven sentiment unwind.`,
+  stmt: `Quantum is being <b>repriced in plain sight</b>: regulation is turning it into a <b>compliance mandate</b> while the durable margin concentrates <b>upstream in the cryogenics & photonics supply chain</b> — and the most defensible position sits there, sized for an <b>18–30 month</b> fault-tolerance timeline and hedged against a hype unwind.`,
 };
 
-// Evidence ledger — each is a source the agent "read"; ** ** marks the key phrase.
-const SOURCES = [
-  { key:"news",     origin:"Financial Times",            quote:`Regulators issued draft guidance recommending **post-quantum cryptography migration plans** from large institutions by **2027**, reframing quantum from an upside bet into a compliance line item.` },
-  { key:"internal", origin:"Internal · Flows Dashboard",  quote:`Aggregated flow data shows **three consecutive weeks** of net inflows into quantum-themed ETFs — the **longest streak since launch** — and it tracks the regulatory news cycle, not hardware milestones.` },
-  { key:"internal", origin:"Internal · Single-Name Note", quote:`A dilution-refrigerator supplier guided to a backlog stretching **7 quarters**, driven by national-lab and hyperscaler orders. Internal model moves the name from **Hold to Add**.` },
-  { key:"news",     origin:"Bloomberg",                   quote:`A multi-agency program will fund fault-tolerant hardware with a **$1.8B** commitment, with milestones tied to logical-qubit counts — public capital that historically pulls private capital forward.` },
-  { key:"research", origin:"Nature Photonics · preprint", quote:`A telecom-band photonic link entangled qubits in **separate cryostats over deployed fiber** — a modular path past single-chip scaling limits, and a tell on where the hard engineering lives.` },
-  { key:"research", origin:"arXiv:2507.10241",            quote:`A 72-qubit surface-code run sustained a logical error rate of **8.3×10⁻⁶** — the **first sub-threshold result reproduced outside a single lab**, the metric desks were waiting on.` },
-  { key:"internal", origin:"Internal · Expert Call",      quote:`A former hardware lead put commercially useful fault-tolerant compute **18–30 months** out — materially tighter than the desk's prior **36-month** base case.` },
-  { key:"news",     origin:"TechCrunch",                  quote:`A startup demonstrated a qubit operating **without dilution cooling**, sparking heavy coverage — but the demo **lacked gate-fidelity numbers**, a classic substance gap.` },
-  { key:"research", origin:"arXiv:2507.13002",            quote:`A Majorana device reportedly held coherence past **1 ms**, an order of magnitude over prior attempts — but **independent replication is still pending**.` },
-  { key:"news",     origin:"Reuters",                     quote:`A major cloud provider moved its **1,000-qubit** processor to general availability; analysts read thin margins but real **developer-toolchain lock-in** as the prize.` },
-];
-
-// Insights — ordered by conviction; each cites SOURCES by index.
+// Timeline runs left→right in time. Each insight is anchored to a sample index
+// (`at`) on the timeline and to its primary data stream (`key`), so the node
+// sits on that line at that moment. Evidence is what the agent read for it.
 const INSIGHTS = [
-  { h:"Regulation is converting quantum into a mandatory compliance spend.",
-    body:"The demand driver is shifting from speculative upside to obligation. That is a more durable — and more forecastable — revenue base than the moonshot narrative the market is still pricing.",
-    conf:0.88, sources:[0,1],
-    flag:{ kind:"flag", label:"High conviction" } },
-  { h:"Fault-tolerance timelines just compressed — the desk's base case is stale.",
-    body:"A reproduced sub-threshold error rate plus an expert-network data point pull the useful-FTQC window inside three years. The internal 36-month base case needs re-cutting earlier.",
-    conf:0.84, sources:[5,6],
-    flag:{ kind:"flag", label:"Timeline shift" } },
-  { h:"The margin is migrating to the supply chain, not the chipmakers.",
-    body:"Cryogenics and photonics are the binding constraint, and backlogs there are already multi-quarter. The asymmetric, less-crowded exposure is upstream of the names in the headlines.",
-    conf:0.79, sources:[2,3,4] },
-  { h:"Sentiment is running ahead of substance — keep a hype hedge on.",
-    body:"Room-temperature claims and unreplicated coherence records are inflating coverage without verified fidelity. High media signal, low confirmed substance — a classic setup for a sentiment unwind.",
-    conf:0.53, sources:[7,8,9],
-    flag:{ kind:"risk", label:"Contrarian · risk" } },
+  { at: 38, key:"internal", conf:0.79,
+    h:"The margin is migrating to the supply chain, not the chipmakers.",
+    body:"Cryogenics and photonics are the binding constraint, and backlogs there are already multi-quarter — the asymmetric, less-crowded exposure is upstream of the headline names.",
+    sources:[
+      { key:"internal", origin:"Internal · Single-Name Note", q:`A dilution-refrigerator supplier guided to a backlog stretching **7 quarters**, driven by national-lab and hyperscaler orders. Model moves the name from **Hold to Add**.` },
+      { key:"news",     origin:"Bloomberg",                   q:`A multi-agency program will fund fault-tolerant hardware with a **$1.8B** commitment — public capital that historically pulls private capital forward.` },
+      { key:"research", origin:"Nature Photonics",            q:`A photonic link entangled qubits in **separate cryostats over deployed fiber** — a tell on where the hard engineering actually lives.` },
+    ] },
+  { at: 104, key:"news", conf:0.88, flag:{ kind:"flag", label:"High conviction" },
+    h:"Regulation is converting quantum into a mandatory compliance spend.",
+    body:"The demand driver is shifting from speculative upside to obligation — a more durable and forecastable revenue base than the moonshot narrative the market is still pricing.",
+    sources:[
+      { key:"news",     origin:"Financial Times",            q:`Draft guidance recommends **post-quantum cryptography migration plans** from large institutions by **2027**, reframing quantum as a compliance line item.` },
+      { key:"internal", origin:"Internal · Flows Dashboard",  q:`**Three consecutive weeks** of net inflows into quantum-themed ETFs — the **longest streak since launch** — tracking the regulatory cycle, not hardware.` },
+    ] },
+  { at: 168, key:"research", conf:0.84, flag:{ kind:"flag", label:"Timeline shift" },
+    h:"Fault-tolerance just moved closer — the desk's base case is stale.",
+    body:"A reproduced sub-threshold error rate plus an expert data point pull the useful-FTQC window inside three years. The internal 36-month base case needs re-cutting earlier.",
+    sources:[
+      { key:"research", origin:"arXiv:2507.10241",            q:`A 72-qubit surface-code run held a logical error rate of **8.3×10⁻⁶** — the **first sub-threshold result reproduced outside a single lab**.` },
+      { key:"internal", origin:"Internal · Expert Call",      q:`A former hardware lead put useful fault-tolerant compute **18–30 months** out — tighter than the desk's prior **36-month** base case.` },
+    ] },
+  { at: 214, key:"news", conf:0.53, flag:{ kind:"risk", label:"Contrarian · risk" },
+    h:"Sentiment is running ahead of substance — keep a hype hedge on.",
+    body:"Room-temperature claims and unreplicated coherence records are inflating coverage without verified fidelity: high media signal, low confirmed substance — a classic setup for a sentiment unwind.",
+    sources:[
+      { key:"news",     origin:"TechCrunch",                  q:`A startup showed a qubit running **without dilution cooling** — heavy coverage, but the demo **lacked gate-fidelity numbers**.` },
+      { key:"research", origin:"arXiv:2507.13002",            q:`A Majorana device reportedly held coherence past **1 ms** — but **independent replication is still pending**.` },
+      { key:"news",     origin:"Reuters",                     q:`A cloud provider moved a **1,000-qubit** processor to GA; analysts read thin margins but real **toolchain lock-in** as the prize.` },
+    ] },
 ];
 
-function confWord(c) {
-  return c >= 0.8 ? "High conviction" : c >= 0.65 ? "Constructive" : c >= 0.5 ? "Watch" : "Speculative";
+const SAMPLES = 240;
+const START = new Date("2025-07-01T09:00:00").getTime();
+const MS_PER = 16 * 3600 * 1000;
+const WAVE = {
+  research: { base:0.50, amp:0.28, f1:0.045, f2:0.017, ph:0.0 },
+  news:     { base:0.48, amp:0.30, f1:0.060, f2:0.023, ph:2.1 },
+  internal: { base:0.54, amp:0.24, f1:0.034, f2:0.029, ph:4.3 },
+};
+const data = [];
+for (let i = 0; i < SAMPLES; i++) {
+  const row = {};
+  for (const k of KEYS) {
+    const w = WAVE[k];
+    let v = w.base + w.amp * Math.sin(i * w.f1 + w.ph) + w.amp * 0.45 * Math.sin(i * w.f2 + w.ph * 1.7);
+    row[k] = Math.max(0.05, Math.min(0.95, v));
+  }
+  data.push(row);
 }
+
+function confWord(c) { return c >= 0.8 ? "High conviction" : c >= 0.65 ? "Constructive" : c >= 0.5 ? "Watch" : "Speculative"; }
 function mark(s) { return s.replace(/\*\*(.+?)\*\*/g, "<mark>$1</mark>"); }
+function fmtDate(at) { return new Date(START + at * MS_PER).toLocaleDateString("en-US", { month:"short", day:"numeric" }); }
 
 // ----------------------------------------------------------------------------
-//  Build the DOM
+//  Build header / thesis / cards / dots
 // ----------------------------------------------------------------------------
 document.getElementById("thesis-stmt").innerHTML = THESIS.stmt;
 document.getElementById("hero-conf").textContent = Math.round(THESIS.conf * 100) + "%";
-document.getElementById("thesis-srcn").textContent = SOURCES.length;
-document.getElementById("thesis-insn").textContent = INSIGHTS.length;
+const totalSources = INSIGHTS.reduce((a, ins) => a + ins.sources.length, 0);
+document.getElementById("sub-srcn").textContent = 1240 .toLocaleString();
+document.getElementById("sub-insn").textContent = INSIGHTS.length;
 
-const insWrap = document.getElementById("insights");
+const track = document.getElementById("track");
+const dotsWrap = document.getElementById("dots");
 INSIGHTS.forEach((ins, i) => {
-  const primary = STREAM[SOURCES[ins.sources[0]].key].c;
-  const el = document.createElement("article");
-  el.className = "insight" + (ins.flag && ins.flag.kind === "flag" ? " flagged" : "");
-  el.id = "ins-" + i;
-  el.style.setProperty("--accent", primary);
-  const streamsUsed = [...new Set(ins.sources.map(s => SOURCES[s].key))];
-  const dots = streamsUsed.map(k => `<span class="sd" style="background:${STREAM[k].c}"></span>`).join("");
+  const accent = STREAM[ins.key].c;
+  const card = document.createElement("article");
+  card.className = "card";
+  card.id = "card-" + i;
+  card.style.setProperty("--accent", accent);
   const flagBadge = ins.flag
-    ? `<span class="badge ${ins.flag.kind === "risk" ? "risk" : "flag"}">${ins.flag.kind === "risk" ? "⚠" : "★"} ${ins.flag.label}</span>`
-    : "";
-  el.innerHTML = `
-    <div class="top">
-      <span class="badge">#${i + 1}</span>
-      ${flagBadge}
-      <span class="badge">${dots} ${ins.sources.length} sources</span>
-    </div>
-    <h3>${ins.h}</h3>
-    <p>${ins.body}</p>
-    <div class="foot">
-      <div class="conf">
+    ? `<span class="badge ${ins.flag.kind === "risk" ? "risk" : "flag"}">${ins.flag.kind === "risk" ? "⚠" : "★"} ${ins.flag.label}</span>` : "";
+  const evHtml = ins.sources.map(s => `
+    <div class="ev">
+      <div class="eh"><span class="sd" style="background:${STREAM[s.key].c}"></span>
+        <span class="stream" style="color:${STREAM[s.key].c}">${STREAM[s.key].label}</span>
+        <span class="origin">${s.origin}</span></div>
+      <div class="q">${mark(s.q)}</div>
+    </div>`).join("");
+  card.innerHTML = `
+    <div class="c-pad">
+      <div class="c-top">
+        <span class="badge date">◷ ${fmtDate(ins.at)}</span>
+        ${flagBadge}
+        <span class="badge">${ins.sources.length} sources</span>
+      </div>
+      <h3>${ins.h}</h3>
+      <p class="body">${ins.body}</p>
+      <div class="c-conf">
         <span class="word">${confWord(ins.conf)}</span>
         <span class="bar"><span class="fill" style="width:${Math.round(ins.conf * 100)}%"></span></span>
         <span class="pct">${Math.round(ins.conf * 100)}%</span>
       </div>
-      <button class="trace" data-i="${i}">Trace evidence <span class="c">↓</span></button>
-    </div>`;
-  insWrap.appendChild(el);
-});
-
-const evWrap = document.getElementById("evidence");
-SOURCES.forEach((s, i) => {
-  const st = STREAM[s.key];
-  const supportedBy = INSIGHTS
-    .map((ins, k) => ins.sources.includes(i) ? k + 1 : null)
-    .filter(x => x !== null);
-  const el = document.createElement("article");
-  el.className = "evidence";
-  el.id = "src-" + i;
-  el.style.setProperty("--accent", st.c);
-  el.innerHTML = `
-    <div class="ehead">
-      <span class="sd"></span>
-      <span class="stream">${st.label}</span>
-      <span class="origin">${s.origin}</span>
     </div>
-    <div class="quote">${mark(s.quote)}</div>
-    <div class="supports">↳ supports insight ${supportedBy.join(" & ")}</div>`;
-  evWrap.appendChild(el);
+    <div class="ev-head">Evidence · what supports this</div>
+    <div class="ev-list">${evHtml}</div>`;
+  card.addEventListener("click", () => { stopTour(); setActive(i); });
+  track.appendChild(card);
+
+  const dot = document.createElement("span");
+  dot.className = "dot";
+  dot.style.setProperty("--accent", accent);
+  dot.onclick = () => { stopTour(); setActive(i); };
+  dotsWrap.appendChild(dot);
 });
+const cards = [...track.children];
+const dots = [...dotsWrap.children];
 
 // ----------------------------------------------------------------------------
-//  Trace: highlight an insight's supporting evidence + scroll to it
+//  Timeline canvas
 // ----------------------------------------------------------------------------
-let activeStreams = null;   // null = all visible in dock
-function clearActive() {
-  document.querySelectorAll(".insight.active").forEach(e => e.classList.remove("active"));
-  document.querySelectorAll(".evidence").forEach(e => e.classList.remove("active", "dim", "flash"));
-  activeStreams = null;
-  syncLegend();
+const cv = document.getElementById("timeline");
+const ctx = cv.getContext("2d");
+let W = 0, H = 0;
+const PAD = { t: 16, b: 22, l: 14, r: 14 };
+
+function fit() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const r = cv.getBoundingClientRect();
+  cv.width = Math.max(1, r.width * dpr);
+  cv.height = Math.max(1, r.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  W = r.width; H = r.height;
+  // side padding so first / last card can center under the snap
+  const cw = cards[0].getBoundingClientRect().width;
+  const pad = Math.max(14, (track.clientWidth - cw) / 2);
+  track.style.paddingLeft = pad + "px";
+  track.style.paddingRight = pad + "px";
+  scrollToIndex(active, false);
 }
-function trace(i, scroll = true) {
-  clearActive();
-  const ins = INSIGHTS[i];
-  document.getElementById("ins-" + i).classList.add("active");
-  activeStreams = new Set(ins.sources.map(s => SOURCES[s].key));
-  syncLegend();
-  document.querySelectorAll(".evidence").forEach(e => e.classList.add("dim"));
-  ins.sources.forEach((si, k) => {
-    const card = document.getElementById("src-" + si);
-    card.classList.remove("dim");
-    card.classList.add("active");
-    setTimeout(() => { card.classList.add("flash"); }, 60 + k * 130);
-    setTimeout(() => { card.classList.remove("flash"); }, 60 + k * 130 + 900);
-  });
-  if (scroll) {
-    document.getElementById("src-" + ins.sources[0]).scrollIntoView({ behavior: "smooth", block: "center" });
+window.addEventListener("resize", fit);
+
+const xAt = (idx) => PAD.l + (idx / (SAMPLES - 1)) * (W - PAD.l - PAD.r);
+const yAt = (v)  => PAD.t + (1 - v) * (H - PAD.t - PAD.b);
+
+function drawTimeline(now) {
+  ctx.clearRect(0, 0, W, H);
+  const activeKeys = new Set(INSIGHTS[active].sources.map(s => s.key));
+
+  // grid
+  ctx.strokeStyle = "rgba(120,140,170,0.05)"; ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const y = PAD.t + (i / 3) * (H - PAD.t - PAD.b);
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
   }
+  // date axis
+  ctx.fillStyle = "rgba(120,135,160,0.55)"; ctx.textAlign = "center";
+  ctx.font = "10px " + getComputedStyle(document.body).getPropertyValue("--mono");
+  for (let i = 0; i <= 5; i++) {
+    const idx = Math.round((i / 5) * (SAMPLES - 1));
+    ctx.fillText(fmtDate(idx), xAt(idx), H - 7);
+  }
+
+  // playhead at active node
+  const px = xAt(INSIGHTS[active].at);
+  const grad = ctx.createLinearGradient(0, PAD.t, 0, H - PAD.b);
+  grad.addColorStop(0, "rgba(158,204,255,0.10)");
+  grad.addColorStop(1, "rgba(158,204,255,0)");
+  ctx.fillStyle = grad; ctx.fillRect(px - 1.5, PAD.t, 3, H - PAD.t - PAD.b);
+  ctx.strokeStyle = "rgba(170,190,225,0.35)"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(px, PAD.t); ctx.lineTo(px, H - PAD.b); ctx.stroke();
+
+  // stream lines (dim those the active insight doesn't use)
+  for (const k of KEYS) {
+    const on = activeKeys.has(k); const c = STREAM[k].c;
+    ctx.save();
+    ctx.globalAlpha = on ? 1 : 0.16;
+    ctx.strokeStyle = c; ctx.lineWidth = 1.6; ctx.lineJoin = "round"; ctx.lineCap = "round";
+    if (on) { ctx.shadowColor = c; ctx.shadowBlur = 4; }
+    ctx.beginPath();
+    for (let i = 0; i < SAMPLES; i++) { const x = xAt(i), y = yAt(data[i][k]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.stroke(); ctx.restore();
+  }
+
+  // insight nodes
+  const t = now / 1000;
+  INSIGHTS.forEach((ins, i) => {
+    const x = xAt(ins.at), y = yAt(data[ins.at][ins.key]), c = STREAM[ins.key].c;
+    const isA = i === active;
+    if (isA) {
+      const pulse = 0.5 + 0.5 * Math.sin(t * 2.4);
+      ctx.strokeStyle = c; ctx.globalAlpha = 0.4 + 0.3 * pulse; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(x, y, 9 + pulse * 5, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    ctx.shadowColor = c; ctx.shadowBlur = isA ? 12 : 0;
+    ctx.fillStyle = isA ? c : "rgba(20,24,29,1)";
+    ctx.beginPath(); ctx.arc(x, y, isA ? 6 : 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 1.6; ctx.strokeStyle = c; ctx.stroke();
+    if (ins.flag && ins.flag.kind !== "risk") {
+      ctx.fillStyle = "#f5d272"; ctx.font = "9px " + getComputedStyle(document.body).getPropertyValue("--mono");
+      ctx.textAlign = "center"; ctx.fillText("★", x, y - (isA ? 16 : 11));
+    } else if (ins.flag) {
+      ctx.fillStyle = "#f5d272"; ctx.font = "9px " + getComputedStyle(document.body).getPropertyValue("--mono");
+      ctx.textAlign = "center"; ctx.fillText("⚠", x, y - (isA ? 16 : 11));
+    }
+    if (isA) {
+      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x, y, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+  });
+
+  requestAnimationFrame(drawTimeline);
 }
-document.querySelectorAll(".trace").forEach(b => {
-  b.onclick = () => { stopTour(); trace(parseInt(b.dataset.i, 10)); };
+
+// node hit-testing
+cv.addEventListener("pointerdown", (e) => {
+  const r = cv.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  let best = -1, bd = 22 * 22;
+  INSIGHTS.forEach((ins, i) => {
+    const d = (xAt(ins.at) - mx) ** 2 + (yAt(data[ins.at][ins.key]) - my) ** 2;
+    if (d < bd) { bd = d; best = i; }
+  });
+  if (best >= 0) { stopTour(); setActive(best); }
 });
 
-function syncLegend() {
-  document.querySelectorAll(".dock-legend span[data-k]").forEach(s => {
-    const on = !activeStreams || activeStreams.has(s.dataset.k);
-    s.classList.toggle("off", !on);
-  });
+// ----------------------------------------------------------------------------
+//  Active state + scroll sync (cards <-> timeline)
+// ----------------------------------------------------------------------------
+let active = 0;
+let progScroll = false;
+
+function scrollToIndex(i, smooth = true) {
+  const c = cards[i];
+  const left = c.offsetLeft - (track.clientWidth - c.offsetWidth) / 2;
+  progScroll = true;
+  track.scrollTo({ left, behavior: smooth ? "smooth" : "auto" });
+  clearTimeout(scrollToIndex._t);
+  scrollToIndex._t = setTimeout(() => { progScroll = false; }, smooth ? 480 : 60);
 }
 
+function setActive(i, fromScroll = false) {
+  i = Math.max(0, Math.min(INSIGHTS.length - 1, i));
+  const changed = i !== active;
+  active = i;
+  cards.forEach((c, k) => c.classList.toggle("active", k === i));
+  dots.forEach((d, k) => d.classList.toggle("on", k === i));
+  if (!fromScroll) scrollToIndex(i);
+}
+
+// derive active card from horizontal scroll position
+let rafScroll = 0;
+track.addEventListener("scroll", () => {
+  if (rafScroll) return;
+  rafScroll = requestAnimationFrame(() => {
+    rafScroll = 0;
+    if (progScroll) return;
+    const center = track.scrollLeft + track.clientWidth / 2;
+    let best = 0, bd = Infinity;
+    cards.forEach((c, i) => { const cc = c.offsetLeft + c.offsetWidth / 2; const d = Math.abs(cc - center); if (d < bd) { bd = d; best = i; } });
+    if (best !== active) setActive(best, true);
+  });
+});
+
+document.getElementById("prev").onclick = () => { stopTour(); setActive(active - 1); };
+document.getElementById("next").onclick = () => { stopTour(); setActive(active + 1); };
+document.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowLeft")  { stopTour(); setActive(active - 1); }
+  if (e.key === "ArrowRight") { stopTour(); setActive(active + 1); }
+  if (e.key === "Escape") stopTour();
+  if (e.key === " " && e.target === document.body) { e.preventDefault(); startTour(); }
+});
+
 // ----------------------------------------------------------------------------
-//  Guided tour — the "tell me a story" walk-through
+//  Guided walk-through (sweeps the playhead along the timeline)
 // ----------------------------------------------------------------------------
 const narrator = document.getElementById("narrator");
 const narrStep = document.getElementById("narr-step");
 const narrTxt  = document.getElementById("narr-txt");
 const walkBtn  = document.getElementById("walk");
-let tourOn = false;
-let tourToken = 0;
-
+let tourOn = false, tourToken = 0;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-function setNarr(step, txt) { narrStep.textContent = step; narrTxt.innerHTML = txt; }
+function setNarr(s, t) { narrStep.textContent = s; narrTxt.innerHTML = t; }
 
 function startTour() {
   if (tourOn) { stopTour(); return; }
-  tourOn = true;
-  const myToken = ++tourToken;
-  walkBtn.classList.add("running");
-  walkBtn.innerHTML = "<span>■</span> Stop walkthrough";
+  tourOn = true; const token = ++tourToken;
+  walkBtn.classList.add("running"); walkBtn.innerHTML = "<span>■</span> Stop";
   narrator.classList.add("show");
-  runTour(myToken);
+  runTour(token);
 }
 function stopTour() {
+  if (!tourOn) return;
   tourOn = false; tourToken++;
-  walkBtn.classList.remove("running");
-  walkBtn.innerHTML = "<span>▶</span> Walk me through the analysis";
+  walkBtn.classList.remove("running"); walkBtn.innerHTML = "<span>▶</span> Walk me through it";
   narrator.classList.remove("show");
-  clearActive();
 }
-async function step(token, ms) { await sleep(ms); return tourOn && token === tourToken; }
+async function wait(token, ms) { await sleep(ms); return tourOn && token === tourToken; }
 
 async function runTour(token) {
-  clearActive();
-  document.getElementById("thesis").scrollIntoView({ behavior: "smooth", block: "start" });
-  setNarr("The call", "Here's the thesis. Let me show you the insights behind it — strongest conviction first.");
-  if (!await step(token, 3200)) return;
-
+  setNarr("The call", "These four insights build the thesis — in the order the agent found them. Watch the timeline.");
+  if (!await wait(token, 3000)) return;
   for (let i = 0; i < INSIGHTS.length; i++) {
+    setActive(i);
     const ins = INSIGHTS[i];
-    document.getElementById("ins-" + i).classList.add("active");
-    document.getElementById("ins-" + i).scrollIntoView({ behavior: "smooth", block: "center" });
     const flag = ins.flag ? ` <b style="color:var(--flag)">[${ins.flag.label}]</b>` : "";
-    setNarr(`Insight ${i + 1} / ${INSIGHTS.length}`,
-            `${ins.h}${flag} — conviction ${Math.round(ins.conf * 100)}%.`);
-    if (!await step(token, 2600)) return;
-
-    setNarr(`Evidence ${i + 1}`,
-            `Tracing this to ${ins.sources.length} source${ins.sources.length > 1 ? "s" : ""} the agent read…`);
-    trace(i);
-    if (!await step(token, 3400)) return;
+    setNarr(`${fmtDate(ins.at)} · ${i + 1}/${INSIGHTS.length}`,
+            `${ins.h}${flag} — ${Math.round(ins.conf * 100)}% conviction, traced to ${ins.sources.length} sources below.`);
+    if (!await wait(token, 3600)) return;
   }
-
-  clearActive();
-  document.getElementById("thesis").scrollIntoView({ behavior: "smooth", block: "start" });
-  setNarr("Conclusion",
-          `Four insights, two flagged, all traced to source — net <b>${Math.round(THESIS.conf * 100)}% conviction</b>. That's the call.`);
-  if (!await step(token, 4200)) return;
+  setActive(1);
+  setNarr("Conclusion", `Four insights, two flagged, every one traced to source — net <b>${Math.round(THESIS.conf * 100)}% conviction</b>. That's the call.`);
+  if (!await wait(token, 4200)) return;
   stopTour();
 }
-
 walkBtn.onclick = startTour;
 document.getElementById("narr-stop").onclick = stopTour;
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { stopTour(); clearActive(); }
-  if (e.key === " " && e.target === document.body) { e.preventDefault(); startTour(); }
+
+// ----------------------------------------------------------------------------
+//  Boot
+// ----------------------------------------------------------------------------
+requestAnimationFrame(() => {
+  fit();
+  setActive(0);
+  scrollToIndex(0, false);
+  requestAnimationFrame(drawTimeline);
 });
-
-// ----------------------------------------------------------------------------
-//  Bottom dock — ambient "still researching" sparkline
-// ----------------------------------------------------------------------------
-const spark = document.getElementById("spark");
-const sctx = spark.getContext("2d");
-const KEYS = ["research", "news", "internal"];
-const WAVE = {
-  research: { base:0.50, amp:0.30, f1:0.045, f2:0.017, ph:0.0 },
-  news:     { base:0.48, amp:0.33, f1:0.060, f2:0.023, ph:2.1 },
-  internal: { base:0.52, amp:0.27, f1:0.034, f2:0.029, ph:4.3 },
-};
-const series = { research:[], news:[], internal:[] };
-const marks = [];                 // {col, key} ambient insight ticks
-let SW = 0, SH = 0, COLS = 160, phase = 0;
-let srcCount = 1240, insCount = INSIGHTS.length;
-
-function fitSpark() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const r = spark.getBoundingClientRect();
-  spark.width = Math.max(1, r.width * dpr);
-  spark.height = Math.max(1, r.height * dpr);
-  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  SW = r.width; SH = r.height;
-  COLS = SW < 520 ? 110 : 180;
-}
-window.addEventListener("resize", fitSpark);
-
-function tick() {
-  for (const k of KEYS) {
-    const w = WAVE[k];
-    let v = w.base + w.amp * Math.sin(phase * w.f1 + w.ph) + w.amp * 0.45 * Math.sin(phase * w.f2 + w.ph * 1.7);
-    v = Math.max(0.05, Math.min(0.95, v));
-    series[k].push(v);
-    if (series[k].length > COLS + 5) series[k].shift();
-  }
-  if (Math.random() < 0.03) { marks.push({ col: series.research.length - 1, key: KEYS[(Math.random() * 3) | 0] }); insCount++; }
-  for (const m of marks) m.col--;
-  while (marks.length && marks[0].col < 0) marks.shift();
-  phase++;
-  srcCount += (Math.random() < 0.6 ? 2 : 3);
-}
-
-function drawSpark() {
-  sctx.clearRect(0, 0, SW, SH);
-  const n = series.research.length;
-  if (n < 2) return;
-  const padY = 6;
-  const xFor = (i) => (i / (COLS - 1)) * SW;
-  const yFor = (v) => padY + (1 - v) * (SH - padY * 2);
-  for (const k of KEYS) {
-    const on = !activeStreams || activeStreams.has(k);
-    const c = STREAM[k].c;
-    sctx.save();
-    sctx.globalAlpha = on ? 1 : 0.18;
-    sctx.strokeStyle = c; sctx.lineWidth = 1.5; sctx.lineJoin = "round"; sctx.lineCap = "round";
-    if (on) { sctx.shadowColor = c; sctx.shadowBlur = 4; }
-    sctx.beginPath();
-    const off = Math.max(0, n - COLS);
-    for (let i = off; i < n; i++) {
-      const x = xFor(i - off), y = yFor(series[k][i]);
-      i === off ? sctx.moveTo(x, y) : sctx.lineTo(x, y);
-    }
-    sctx.stroke();
-    sctx.restore();
-  }
-  // ambient insight ticks
-  for (const m of marks) {
-    if (m.col < 0 || m.col >= n) continue;
-    const on = !activeStreams || activeStreams.has(m.key);
-    sctx.globalAlpha = on ? 0.9 : 0.15;
-    sctx.fillStyle = STREAM[m.key].c;
-    sctx.beginPath(); sctx.arc(xFor(m.col), yFor(series[m.key][m.col]), 2.4, 0, Math.PI * 2); sctx.fill();
-  }
-  sctx.globalAlpha = 1;
-  document.getElementById("dock-srcn").textContent = srcCount.toLocaleString();
-  document.getElementById("dock-insn").textContent = insCount;
-}
-
-let acc = 0, last = performance.now();
-function loop(now) {
-  acc += now - last; last = now;
-  while (acc >= 95) { tick(); acc -= 95; }
-  drawSpark();
-  requestAnimationFrame(loop);
-}
-
-// boot
-fitSpark();
-for (let i = 0; i < COLS; i++) tick();
-syncLegend();
-requestAnimationFrame(loop);
 </script>
 </body>
 </html>
