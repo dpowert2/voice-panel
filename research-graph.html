@@ -4,154 +4,147 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#0b0d10" />
-<title>Agent · Quantum — Analyst Timeline</title>
+<title>Agent · Quantum — Analyst</title>
 <style>
   :root {
-    --bg:        #0b0d10;
-    --panel:     #14181d;
-    --panel2:    #1a1f26;
-    --line:      #262d36;
-    --ink:       #e6e9ed;
-    --ink-dim:   #8b95a3;
-    --ink-faint: #5b6472;
-    --research:  #ef6b6b;
-    --news:      #7fd1a1;
-    --internal:  #9eccff;
-    --flag:      #f5d272;
-    --mono: "SF Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+    --bg:#0b0d10; --panel:#14181d; --panel2:#1a1f26; --line:#262d36;
+    --ink:#e6e9ed; --ink-dim:#8b95a3; --ink-faint:#5b6472;
+    --research:#ef6b6b; --news:#7fd1a1; --internal:#9eccff; --flag:#f5d272;
+    --mono:"SF Mono","SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
   }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
-  body {
-    background: var(--bg); color: var(--ink); overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, system-ui, sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  #app { display: flex; flex-direction: column; height: 100dvh;
-    padding: max(12px, env(safe-area-inset-top)) 0 max(10px, env(safe-area-inset-bottom)); }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--ink); overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased; }
+  #app { display:flex; flex-direction:column; height:100dvh;
+    padding:max(12px,env(safe-area-inset-top)) 0 max(10px,env(safe-area-inset-bottom)); }
 
-  /* ---------- header ---------- */
-  header { display: flex; align-items: center; justify-content: space-between; gap: 14px;
-    padding: 0 18px 10px; }
-  .brand { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-  .eyebrow { display: flex; align-items: center; gap: 7px; font-family: var(--mono);
-    font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-dim); }
-  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--research); flex: none;
-    box-shadow: 0 0 0 0 rgba(239,107,107,.5); animation: pulse 1.8s infinite; }
-  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239,107,107,.45); }
-    70% { box-shadow: 0 0 0 6px rgba(239,107,107,0); } 100% { box-shadow: 0 0 0 0 rgba(239,107,107,0); } }
-  .brand h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
-  .brand h1 .topic { color: var(--internal); }
-  .conviction { text-align: right; flex: none; }
-  .conviction .v { font-family: var(--mono); font-size: 18px; font-weight: 600; }
-  .conviction .l { font-family: var(--mono); font-size: 9px; letter-spacing: .12em;
-    text-transform: uppercase; color: var(--ink-faint); margin-top: 2px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:0 18px 10px; }
+  .brand { display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .eyebrow { display:flex; align-items:center; gap:7px; font-family:var(--mono);
+    font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-dim); }
+  .live-dot { width:7px; height:7px; border-radius:50%; background:var(--research); flex:none;
+    box-shadow:0 0 0 0 rgba(239,107,107,.5); animation:pulse 1.8s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(239,107,107,.45);} 70%{box-shadow:0 0 0 6px rgba(239,107,107,0);} 100%{box-shadow:0 0 0 0 rgba(239,107,107,0);} }
+  .brand h1 { margin:0; font-size:16px; font-weight:600; letter-spacing:-.01em; }
+  .brand h1 .topic { color:var(--internal); }
+  .conviction { text-align:right; flex:none; }
+  .conviction .v { font-family:var(--mono); font-size:18px; font-weight:600; }
+  .conviction .l { font-family:var(--mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint); margin-top:2px; }
 
-  /* ---------- thesis banner ---------- */
-  .thesis { margin: 0 18px 12px; border: 1px solid var(--line); border-radius: 12px;
-    padding: 13px 16px; background: linear-gradient(160deg, var(--panel2), var(--panel));
-    position: relative; overflow: hidden; }
-  .thesis::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-    background: linear-gradient(180deg, var(--internal), var(--news)); }
-  .thesis .tag { font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em;
-    text-transform: uppercase; color: var(--internal); }
-  .thesis .stmt { font-size: 14.5px; line-height: 1.5; font-weight: 500; margin: 6px 0 0; }
-  .thesis .stmt b { color: #fff; font-weight: 650; }
-  .thesis .sub { margin-top: 9px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint);
-    display: flex; gap: 14px; flex-wrap: wrap; }
-  .thesis .sub b { color: var(--ink); }
+  /* ---------- focus zone (pinned top) ---------- */
+  #focus { margin:0 18px 10px; border:1px solid var(--line); border-radius:13px; overflow:hidden;
+    background:linear-gradient(160deg,var(--panel2),var(--panel)); position:relative;
+    transition:border-color .3s, box-shadow .3s; }
+  #focus.lit { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), 0 24px 56px -34px rgba(0,0,0,.9); }
+  #focus::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
+    background:var(--accent, linear-gradient(180deg,var(--internal),var(--news))); }
+  .focus-pad { padding:14px 17px; }
+  .scan-view .tag, .ins-view .tag { font-family:var(--mono); font-size:9.5px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--accent, var(--internal)); }
+  .scan-view .stmt { font-size:14px; line-height:1.5; font-weight:500; margin:6px 0 0; }
+  .scan-view .stmt b { color:#fff; font-weight:650; }
+  .scan-status { margin-top:10px; font-family:var(--mono); font-size:11px; color:var(--ink-dim);
+    display:flex; align-items:center; gap:8px; }
+  .scan-status .sp { width:11px; height:11px; border-radius:50%; border:1.5px solid var(--line);
+    border-top-color:var(--internal); animation:spin .9s linear infinite; flex:none; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .ins-view { display:none; }
+  #focus.investigate .scan-view { display:none; }
+  #focus.investigate .ins-view { display:block; }
+  .ins-top { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+  .badge { font-family:var(--mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    padding:3px 8px; border-radius:999px; border:1px solid var(--line); color:var(--ink-dim);
+    display:inline-flex; align-items:center; gap:5px; }
+  .badge.flag { color:#1a1407; background:var(--flag); border-color:var(--flag); font-weight:700; }
+  .badge.risk { color:var(--flag); background:rgba(245,210,114,.08); border-color:#4a4327; }
+  .badge.date { color:var(--accent); border-color:color-mix(in srgb,var(--accent) 45%,var(--line)); }
+  .ins-h { margin:9px 0 0; font-size:18px; font-weight:650; line-height:1.3; letter-spacing:-.01em; }
+  .ins-lead { margin:6px 0 0; font-size:13px; line-height:1.5; color:#c2c9d4; font-style:italic; }
+  .ins-foot { display:flex; align-items:center; gap:10px; margin-top:12px; }
+  .ins-foot .bar { flex:1; max-width:200px; height:5px; border-radius:4px; background:var(--panel2); overflow:hidden; }
+  .ins-foot .fill { height:100%; border-radius:4px; background:var(--accent); }
+  .ins-foot .pct { font-family:var(--mono); font-size:11px; color:var(--ink-dim); }
+  .ins-foot .back { margin-left:auto; cursor:pointer; border:1px solid var(--line); background:var(--panel);
+    color:var(--ink-dim); border-radius:8px; padding:7px 12px; font-family:var(--mono); font-size:11px; }
+  .ins-foot .back:hover { color:var(--ink); border-color:#38424f; }
 
   /* ---------- timeline ---------- */
-  .tl-wrap { position: relative; margin: 0 18px; }
-  #timeline { display: block; width: 100%; height: clamp(120px, 20vh, 190px);
-    cursor: pointer; touch-action: pan-x; }
-  .tl-hint { position: absolute; right: 6px; top: 4px; font-family: var(--mono);
-    font-size: 9.5px; color: var(--ink-faint); pointer-events: none; }
+  .tl-wrap { position:relative; margin:0 18px; }
+  #timeline { display:block; width:100%; height:clamp(110px,17vh,170px); cursor:pointer; touch-action:none; }
+  #toast { position:absolute; top:6px; left:50%; transform:translateX(-50%) translateY(-6px);
+    font-family:var(--mono); font-size:11px; letter-spacing:.02em; color:#1a1407; background:var(--flag);
+    border-radius:999px; padding:6px 14px; font-weight:700; white-space:nowrap; opacity:0;
+    transition:opacity .25s, transform .25s; pointer-events:none; box-shadow:0 10px 26px -10px rgba(245,210,114,.5); }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
-  /* ---------- horizontal card track ---------- */
-  .stage { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 10px; }
-  #track { flex: 1; min-height: 0; display: flex; gap: 16px; align-items: stretch;
-    overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
-    position: relative; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
-  #track::-webkit-scrollbar { display: none; }
-  .card { scroll-snap-align: center; flex: 0 0 min(520px, 86vw); display: flex; flex-direction: column;
-    border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow: hidden;
-    transition: border-color .3s, box-shadow .3s, opacity .3s, transform .3s; opacity: .45; }
-  .card.active { opacity: 1; border-color: var(--accent); transform: translateY(-2px);
-    box-shadow: 0 0 0 1px var(--accent), 0 26px 60px -34px rgba(0,0,0,.9); }
-  .card .c-pad { padding: 16px 17px 0; }
-  .card .c-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 10px; }
-  .badge { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase;
-    padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-dim);
-    display: inline-flex; align-items: center; gap: 5px; }
-  .badge.flag { color: #1a1407; background: var(--flag); border-color: var(--flag); font-weight: 700; }
-  .badge.risk { color: var(--flag); background: rgba(245,210,114,.08); border-color: #4a4327; }
-  .badge.date { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-  .card h3 { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.33; letter-spacing: -.01em; }
-  .card .body { margin: 8px 0 0; font-size: 13px; line-height: 1.55; color: #c2c9d4; }
-  .card .c-conf { display: flex; align-items: center; gap: 9px; margin: 13px 0 14px; }
-  .card .c-conf .bar { flex: 1; max-width: 200px; height: 5px; border-radius: 4px; background: var(--panel2); overflow: hidden; }
-  .card .c-conf .fill { height: 100%; border-radius: 4px; background: var(--accent); }
-  .card .c-conf .pct { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
-  .card .c-conf .word { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--ink-faint); }
-
-  .ev-head { font-family: var(--mono); font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase;
-    color: var(--ink-faint); padding: 0 17px; display: flex; align-items: center; gap: 8px; }
-  .ev-head::after { content: ""; flex: 1; height: 1px; background: var(--line); }
-  .ev-list { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 17px 16px; display: flex;
-    flex-direction: column; gap: 9px; scrollbar-width: thin; }
-  .ev { border: 1px solid var(--line); border-radius: 9px; padding: 10px 11px; background: var(--panel2); }
-  .ev .eh { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-  .ev .sd { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-  .ev .stream { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; }
-  .ev .origin { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); margin-left: auto; text-align: right; }
-  .ev .q { font-size: 12.5px; line-height: 1.5; color: #c8cfd9; }
-  .ev mark { background: transparent; color: var(--ink); padding: 0 1px; border-radius: 3px;
-    border-bottom: 1px dashed var(--ink-faint); }
-  .card.active .ev mark { background: color-mix(in srgb, var(--accent) 24%, transparent);
-    border-bottom-color: transparent; color: #fff; }
+  /* ---------- story (horizontal cards) ---------- */
+  .stage { flex:1; min-height:0; display:flex; flex-direction:column; margin-top:10px; }
+  .stage-hint { flex:1; display:flex; align-items:center; justify-content:center; text-align:center;
+    color:var(--ink-faint); font-family:var(--mono); font-size:12px; line-height:1.6; padding:0 30px; }
+  #track { flex:1; min-height:0; display:none; gap:14px; align-items:stretch; overflow-x:auto; overflow-y:hidden;
+    scroll-snap-type:x mandatory; position:relative; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  #track.on { display:flex; }
+  #track::-webkit-scrollbar { display:none; }
+  .card { scroll-snap-align:center; flex:0 0 min(500px,87vw); display:flex; flex-direction:column;
+    border:1px solid var(--line); border-radius:13px; background:var(--panel); overflow:hidden;
+    transition:border-color .3s,box-shadow .3s,opacity .3s,transform .3s; opacity:.4; }
+  .card.active { opacity:1; border-color:var(--accent); transform:translateY(-2px);
+    box-shadow:0 0 0 1px var(--accent), 0 26px 60px -34px rgba(0,0,0,.9); }
+  .card .cp { padding:15px 16px; display:flex; flex-direction:column; height:100%; }
+  .step-row { display:flex; align-items:center; gap:8px; margin-bottom:9px; }
+  .step-n { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--accent); font-weight:600; }
+  .step-row .origin { font-family:var(--mono); font-size:10px; color:var(--ink-faint); margin-left:auto; }
+  .sd { width:8px; height:8px; border-radius:50%; flex:none; background:var(--accent); }
+  .stream { font-family:var(--mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; font-weight:600; color:var(--accent); }
+  .quote { font-size:14px; line-height:1.55; color:#c8cfd9; }
+  .quote mark { background:transparent; color:var(--ink); padding:0 1px; border-radius:3px; border-bottom:1px dashed var(--ink-faint); }
+  .card.active .quote mark { background:color-mix(in srgb,var(--accent) 24%,transparent); border-bottom-color:transparent; color:#fff; }
+  .reason { margin-top:auto; padding-top:12px; font-size:12.5px; line-height:1.5; color:var(--ink-dim);
+    border-top:1px dashed var(--line); display:flex; gap:8px; }
+  .reason::before { content:"↳"; color:var(--accent); }
+  .card.concl { background:linear-gradient(160deg,var(--panel2),var(--panel)); }
+  .card.concl .cp { justify-content:center; }
+  .concl .lab { font-family:var(--mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); }
+  .concl h4 { margin:9px 0 0; font-size:17px; font-weight:650; line-height:1.32; }
+  .concl .cf { display:flex; align-items:center; gap:9px; margin-top:14px; }
+  .concl .bar { flex:1; max-width:180px; height:5px; border-radius:4px; background:var(--panel2); overflow:hidden; }
+  .concl .fill { height:100%; border-radius:4px; background:var(--accent); }
+  .concl .pct { font-family:var(--mono); font-size:11px; color:var(--ink-dim); }
 
   /* ---------- controls ---------- */
-  .controls { display: flex; align-items: center; gap: 12px; padding: 12px 18px 2px; }
-  .nav { cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
-    width: 38px; height: 38px; border-radius: 9px; font-size: 16px; flex: none;
-    display: flex; align-items: center; justify-content: center; transition: border-color .15s, background .15s; }
-  .nav:hover { border-color: #38424f; background: var(--panel2); }
-  .dots { flex: 1; display: flex; justify-content: center; gap: 7px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); cursor: pointer;
-    transition: background .2s, transform .2s; }
-  .dot.on { background: var(--accent, var(--internal)); transform: scale(1.25); }
-  .walk { cursor: pointer; border: 1px solid #34506e; background: rgba(158,204,255,.08); color: #cfe4ff;
-    border-radius: 9px; padding: 0 15px; height: 38px; font-size: 12.5px; font-weight: 600; flex: none;
-    font-family: var(--mono); letter-spacing: .02em; display: inline-flex; align-items: center; gap: 8px;
-    transition: background .15s, border-color .15s; }
-  .walk:hover { background: rgba(158,204,255,.14); border-color: #436a92; }
-  .walk.running { border-color: #5a3b3d; background: rgba(239,107,107,.1); color: #f3a8a8; }
+  .controls { display:flex; align-items:center; gap:12px; padding:12px 18px 2px; }
+  .btn { cursor:pointer; border:1px solid var(--line); background:var(--panel); color:var(--ink);
+    height:38px; border-radius:9px; padding:0 14px; font-family:var(--mono); font-size:12px; flex:none;
+    display:inline-flex; align-items:center; gap:7px; transition:border-color .15s,background .15s; }
+  .btn:hover { border-color:#38424f; background:var(--panel2); }
+  .btn.nav { width:38px; padding:0; justify-content:center; font-size:16px; }
+  .btn.accent { border-color:#34506e; background:rgba(158,204,255,.08); color:#cfe4ff; }
+  .btn.accent:hover { background:rgba(158,204,255,.14); }
+  .dots { flex:1; display:flex; justify-content:center; gap:7px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--line); cursor:pointer; transition:.2s; }
+  .dot.on { background:var(--accent,var(--internal)); transform:scale(1.25); }
+  .spacer { flex:1; }
 
   /* ---------- narrator ---------- */
-  #narrator { position: fixed; left: 50%; bottom: calc(86px + env(safe-area-inset-bottom));
-    transform: translateX(-50%) translateY(10px); z-index: 45; max-width: min(620px, 92vw);
-    background: var(--panel2); border: 1px solid #34506e; border-radius: 11px; padding: 11px 15px;
-    display: flex; align-items: center; gap: 12px; box-shadow: 0 22px 50px -24px rgba(0,0,0,.9);
-    opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; }
-  #narrator.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
-  #narrator .step { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--internal); flex: none; }
-  #narrator .txt { font-size: 13px; line-height: 1.4; }
-  #narrator .stop { margin-left: auto; flex: none; cursor: pointer; border: 1px solid var(--line);
-    background: var(--panel); color: var(--ink-dim); border-radius: 7px; padding: 6px 11px;
-    font-family: var(--mono); font-size: 11px; }
-  #narrator .stop:hover { color: var(--ink); border-color: #38424f; }
+  #narrator { position:fixed; left:50%; bottom:calc(86px+env(safe-area-inset-bottom));
+    transform:translateX(-50%) translateY(10px); z-index:45; max-width:min(640px,92vw);
+    background:var(--panel2); border:1px solid var(--accent,#34506e); border-radius:11px; padding:11px 15px;
+    display:flex; align-items:center; gap:12px; box-shadow:0 22px 50px -24px rgba(0,0,0,.9);
+    opacity:0; pointer-events:none; transition:opacity .25s,transform .25s; }
+  #narrator.show { opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+  #narrator .av { width:26px; height:26px; border-radius:50%; flex:none; background:var(--accent,#34506e);
+    color:#0b0d10; font-weight:800; font-size:13px; display:flex; align-items:center; justify-content:center; font-family:var(--mono); }
+  #narrator .txt { font-size:13px; line-height:1.42; }
+  #narrator .txt b { color:#fff; }
 
-  @media (max-width: 600px) {
-    header { padding: 0 14px 8px; }
-    .brand h1 { font-size: 14px; }
-    .thesis { margin: 0 14px 10px; }
-    .thesis .stmt { font-size: 13px; }
-    .tl-wrap { margin: 0 14px; }
-    .controls { padding: 10px 14px 2px; }
-    .card h3 { font-size: 15.5px; }
+  @media (max-width:600px) {
+    header { padding:0 14px 8px; } .brand h1 { font-size:14px; }
+    #focus { margin:0 14px 8px; } .tl-wrap { margin:0 14px; } .controls { padding:10px 14px 2px; }
+    .ins-h { font-size:16px; } .scan-view .stmt { font-size:13px; }
   }
 </style>
 </head>
@@ -159,387 +152,376 @@
 <div id="app">
   <header>
     <div class="brand">
-      <div class="eyebrow"><span class="live-dot"></span> Agentic Analyst · Research Timeline</div>
+      <div class="eyebrow"><span class="live-dot"></span> Agentic Analyst</div>
       <h1>Agent: <span class="topic">Quantum Computing</span></h1>
     </div>
     <div class="conviction"><div class="v" id="hero-conf">81%</div><div class="l">Thesis conviction</div></div>
   </header>
 
-  <div class="thesis">
-    <div class="tag">Investment thesis</div>
-    <p class="stmt" id="thesis-stmt"></p>
-    <div class="sub">
-      <span>Window <b>Jul–Dec 2025</b></span>
-      <span><b id="sub-srcn">0</b> sources read</span>
-      <span><b id="sub-insn">0</b> insights surfaced</span>
+  <div id="focus">
+    <div class="focus-pad">
+      <div class="scan-view">
+        <div class="tag">Working thesis</div>
+        <p class="stmt" id="thesis-stmt"></p>
+        <div class="scan-status"><span class="sp"></span> <span id="scan-msg">Scanning the data for patterns…</span></div>
+      </div>
+      <div class="ins-view">
+        <div class="ins-top" id="ins-top"></div>
+        <h2 class="ins-h" id="ins-h"></h2>
+        <p class="ins-lead" id="ins-lead"></p>
+        <div class="ins-foot">
+          <span class="bar"><span class="fill" id="ins-fill"></span></span>
+          <span class="pct" id="ins-pct"></span>
+          <button class="back" id="ins-back">← Back to scan</button>
+        </div>
+      </div>
     </div>
   </div>
 
   <div class="tl-wrap">
     <canvas id="timeline"></canvas>
-    <div class="tl-hint">tap a node ↑ · swipe cards ↓</div>
+    <div id="toast">✦ New insight detected</div>
   </div>
 
   <div class="stage">
+    <div class="stage-hint" id="hint">The agent is scanning the timeline.<br>When it flags a pattern, tap the node to see how it got there.</div>
     <div id="track"></div>
   </div>
 
-  <div class="controls">
-    <button class="nav" id="prev" aria-label="Previous">‹</button>
-    <div class="dots" id="dots"></div>
-    <button class="nav" id="next" aria-label="Next">›</button>
-    <button class="walk" id="walk"><span>▶</span> Walk me through it</button>
-  </div>
+  <div class="controls" id="controls"></div>
 </div>
 
 <div id="narrator">
-  <span class="step" id="narr-step">Step</span>
+  <span class="av">Q</span>
   <span class="txt" id="narr-txt"></span>
-  <button class="stop" id="narr-stop">Stop</button>
 </div>
 
 <script>
 "use strict";
 
-// ----------------------------------------------------------------------------
-//  Synthetic content (demo only)
-// ----------------------------------------------------------------------------
 const STREAM = {
-  research: { c:"#ef6b6b", label:"Research" },
-  news:     { c:"#7fd1a1", label:"News" },
-  internal: { c:"#9eccff", label:"Internal · Fidelity" },
+  research:{ c:"#ef6b6b", label:"Research" },
+  news:    { c:"#7fd1a1", label:"News" },
+  internal:{ c:"#9eccff", label:"Internal · Fidelity" },
 };
-const KEYS = ["research", "news", "internal"];
+const KEYS = ["research","news","internal"];
 
-const THESIS = {
-  conf: 0.81,
-  stmt: `Quantum is being <b>repriced in plain sight</b>: regulation is turning it into a <b>compliance mandate</b> while the durable margin concentrates <b>upstream in the cryogenics & photonics supply chain</b> — and the most defensible position sits there, sized for an <b>18–30 month</b> fault-tolerance timeline and hedged against a hype unwind.`,
-};
+const THESIS = { conf:0.81, stmt:`Quantum is being <b>repriced in plain sight</b> — regulation is making it a <b>compliance mandate</b> while the durable margin sits <b>upstream in the supply chain</b>. I'm assembling that call from the patterns below.` };
 
-// Timeline runs left→right in time. Each insight is anchored to a sample index
-// (`at`) on the timeline and to its primary data stream (`key`), so the node
-// sits on that line at that moment. Evidence is what the agent read for it.
 const INSIGHTS = [
-  { at: 38, key:"internal", conf:0.79,
+  { at:38, key:"internal", conf:0.79,
     h:"The margin is migrating to the supply chain, not the chipmakers.",
-    body:"Cryogenics and photonics are the binding constraint, and backlogs there are already multi-quarter — the asymmetric, less-crowded exposure is upstream of the headline names.",
+    lead:"The bottleneck — and the money — is upstream, where the hard engineering actually lives.",
     sources:[
-      { key:"internal", origin:"Internal · Single-Name Note", q:`A dilution-refrigerator supplier guided to a backlog stretching **7 quarters**, driven by national-lab and hyperscaler orders. Model moves the name from **Hold to Add**.` },
-      { key:"news",     origin:"Bloomberg",                   q:`A multi-agency program will fund fault-tolerant hardware with a **$1.8B** commitment — public capital that historically pulls private capital forward.` },
-      { key:"research", origin:"Nature Photonics",            q:`A photonic link entangled qubits in **separate cryostats over deployed fiber** — a tell on where the hard engineering actually lives.` },
+      { key:"internal", origin:"Internal · Single-Name Note", q:`A dilution-refrigerator supplier guided to a backlog of **7 quarters**; the model moves it from **Hold to Add**.`,
+        reason:"A multi-quarter backlog is a hard physical constraint — and it's already forcing a rating change." },
+      { key:"news", origin:"Bloomberg", q:`A multi-agency program will fund fault-tolerant hardware with **$1.8B**, milestones tied to logical-qubit counts.`,
+        reason:"Public capital at this scale historically pulls private money in behind it." },
+      { key:"research", origin:"Nature Photonics", q:`A photonic link entangled qubits in **separate cryostats over deployed fiber**.`,
+        reason:"Even the frontier science routes through cryostats and fiber — that's where value concentrates." },
     ] },
-  { at: 104, key:"news", conf:0.88, flag:{ kind:"flag", label:"High conviction" },
+  { at:104, key:"news", conf:0.88, flag:{ kind:"flag", label:"High conviction" },
     h:"Regulation is converting quantum into a mandatory compliance spend.",
-    body:"The demand driver is shifting from speculative upside to obligation — a more durable and forecastable revenue base than the moonshot narrative the market is still pricing.",
+    lead:"The driver is shifting from speculative upside to obligation — a far more durable demand base.",
     sources:[
-      { key:"news",     origin:"Financial Times",            q:`Draft guidance recommends **post-quantum cryptography migration plans** from large institutions by **2027**, reframing quantum as a compliance line item.` },
-      { key:"internal", origin:"Internal · Flows Dashboard",  q:`**Three consecutive weeks** of net inflows into quantum-themed ETFs — the **longest streak since launch** — tracking the regulatory cycle, not hardware.` },
+      { key:"news", origin:"Financial Times", q:`Draft guidance recommends **post-quantum cryptography migration plans** from large institutions by **2027**.`,
+        reason:"A migration mandate turns quantum from optional upside into a budgeted obligation." },
+      { key:"internal", origin:"Internal · Flows Dashboard", q:`**Three consecutive weeks** of net inflows into quantum ETFs — the **longest streak since launch**.`,
+        reason:"And the money is already moving on the rule, not on hardware milestones." },
     ] },
-  { at: 168, key:"research", conf:0.84, flag:{ kind:"flag", label:"Timeline shift" },
+  { at:168, key:"research", conf:0.84, flag:{ kind:"flag", label:"Timeline shift" },
     h:"Fault-tolerance just moved closer — the desk's base case is stale.",
-    body:"A reproduced sub-threshold error rate plus an expert data point pull the useful-FTQC window inside three years. The internal 36-month base case needs re-cutting earlier.",
+    lead:"The clock moved: useful machines look nearer than our 36-month base case assumed.",
     sources:[
-      { key:"research", origin:"arXiv:2507.10241",            q:`A 72-qubit surface-code run held a logical error rate of **8.3×10⁻⁶** — the **first sub-threshold result reproduced outside a single lab**.` },
-      { key:"internal", origin:"Internal · Expert Call",      q:`A former hardware lead put useful fault-tolerant compute **18–30 months** out — tighter than the desk's prior **36-month** base case.` },
+      { key:"research", origin:"arXiv:2507.10241", q:`A 72-qubit surface code held a logical error rate of **8.3×10⁻⁶** — **first sub-threshold result reproduced outside one lab**.`,
+        reason:"This is the exact milestone desks gate fault-tolerance timelines on." },
+      { key:"internal", origin:"Internal · Expert Call", q:`A former hardware lead put useful fault-tolerant compute **18–30 months** out, vs our **36-month** base case.`,
+        reason:"An insider estimate lands well inside our assumption — the timeline needs re-cutting." },
     ] },
-  { at: 214, key:"news", conf:0.53, flag:{ kind:"risk", label:"Contrarian · risk" },
+  { at:214, key:"news", conf:0.53, flag:{ kind:"risk", label:"Contrarian · risk" },
     h:"Sentiment is running ahead of substance — keep a hype hedge on.",
-    body:"Room-temperature claims and unreplicated coherence records are inflating coverage without verified fidelity: high media signal, low confirmed substance — a classic setup for a sentiment unwind.",
+    lead:"High media signal, low verified substance — the classic setup for a sentiment unwind.",
     sources:[
-      { key:"news",     origin:"TechCrunch",                  q:`A startup showed a qubit running **without dilution cooling** — heavy coverage, but the demo **lacked gate-fidelity numbers**.` },
-      { key:"research", origin:"arXiv:2507.13002",            q:`A Majorana device reportedly held coherence past **1 ms** — but **independent replication is still pending**.` },
-      { key:"news",     origin:"Reuters",                     q:`A cloud provider moved a **1,000-qubit** processor to GA; analysts read thin margins but real **toolchain lock-in** as the prize.` },
+      { key:"news", origin:"TechCrunch", q:`A startup showed a qubit running **without dilution cooling** — but the demo **lacked gate-fidelity numbers**.`,
+        reason:"A big claim with no fidelity figure is a tell, not a result." },
+      { key:"research", origin:"arXiv:2507.13002", q:`A Majorana device reportedly held coherence past **1 ms** — but **replication is still pending**.`,
+        reason:"A record nobody has reproduced is sentiment, not signal." },
+      { key:"news", origin:"Reuters", q:`A cloud provider moved a **1,000-qubit** processor to GA; analysts note **toolchain lock-in** over economics.`,
+        reason:"GA milestones drive coverage faster than they drive earnings." },
     ] },
 ];
 
-const SAMPLES = 240;
-const START = new Date("2025-07-01T09:00:00").getTime();
-const MS_PER = 16 * 3600 * 1000;
+const SAMPLES = 240, START = new Date("2025-07-01T09:00:00").getTime(), MS_PER = 16*3600*1000;
 const WAVE = {
-  research: { base:0.50, amp:0.28, f1:0.045, f2:0.017, ph:0.0 },
-  news:     { base:0.48, amp:0.30, f1:0.060, f2:0.023, ph:2.1 },
-  internal: { base:0.54, amp:0.24, f1:0.034, f2:0.029, ph:4.3 },
+  research:{ base:0.50, amp:0.28, f1:0.045, f2:0.017, ph:0.0 },
+  news:    { base:0.48, amp:0.30, f1:0.060, f2:0.023, ph:2.1 },
+  internal:{ base:0.54, amp:0.24, f1:0.034, f2:0.029, ph:4.3 },
 };
 const data = [];
-for (let i = 0; i < SAMPLES; i++) {
-  const row = {};
-  for (const k of KEYS) {
-    const w = WAVE[k];
-    let v = w.base + w.amp * Math.sin(i * w.f1 + w.ph) + w.amp * 0.45 * Math.sin(i * w.f2 + w.ph * 1.7);
-    row[k] = Math.max(0.05, Math.min(0.95, v));
-  }
-  data.push(row);
-}
+for (let i=0;i<SAMPLES;i++){ const r={}; for(const k of KEYS){ const w=WAVE[k];
+  r[k]=Math.max(0.05,Math.min(0.95, w.base+w.amp*Math.sin(i*w.f1+w.ph)+w.amp*0.45*Math.sin(i*w.f2+w.ph*1.7))); } data.push(r); }
 
-function confWord(c) { return c >= 0.8 ? "High conviction" : c >= 0.65 ? "Constructive" : c >= 0.5 ? "Watch" : "Speculative"; }
-function mark(s) { return s.replace(/\*\*(.+?)\*\*/g, "<mark>$1</mark>"); }
-function fmtDate(at) { return new Date(START + at * MS_PER).toLocaleDateString("en-US", { month:"short", day:"numeric" }); }
+const mark = s => s.replace(/\*\*(.+?)\*\*/g,"<mark>$1</mark>");
+const fmtDate = at => new Date(START+at*MS_PER).toLocaleDateString("en-US",{month:"short",day:"numeric"});
 
-// ----------------------------------------------------------------------------
-//  Build header / thesis / cards / dots
-// ----------------------------------------------------------------------------
 document.getElementById("thesis-stmt").innerHTML = THESIS.stmt;
-document.getElementById("hero-conf").textContent = Math.round(THESIS.conf * 100) + "%";
-const totalSources = INSIGHTS.reduce((a, ins) => a + ins.sources.length, 0);
-document.getElementById("sub-srcn").textContent = 1240 .toLocaleString();
-document.getElementById("sub-insn").textContent = INSIGHTS.length;
-
-const track = document.getElementById("track");
-const dotsWrap = document.getElementById("dots");
-INSIGHTS.forEach((ins, i) => {
-  const accent = STREAM[ins.key].c;
-  const card = document.createElement("article");
-  card.className = "card";
-  card.id = "card-" + i;
-  card.style.setProperty("--accent", accent);
-  const flagBadge = ins.flag
-    ? `<span class="badge ${ins.flag.kind === "risk" ? "risk" : "flag"}">${ins.flag.kind === "risk" ? "⚠" : "★"} ${ins.flag.label}</span>` : "";
-  const evHtml = ins.sources.map(s => `
-    <div class="ev">
-      <div class="eh"><span class="sd" style="background:${STREAM[s.key].c}"></span>
-        <span class="stream" style="color:${STREAM[s.key].c}">${STREAM[s.key].label}</span>
-        <span class="origin">${s.origin}</span></div>
-      <div class="q">${mark(s.q)}</div>
-    </div>`).join("");
-  card.innerHTML = `
-    <div class="c-pad">
-      <div class="c-top">
-        <span class="badge date">◷ ${fmtDate(ins.at)}</span>
-        ${flagBadge}
-        <span class="badge">${ins.sources.length} sources</span>
-      </div>
-      <h3>${ins.h}</h3>
-      <p class="body">${ins.body}</p>
-      <div class="c-conf">
-        <span class="word">${confWord(ins.conf)}</span>
-        <span class="bar"><span class="fill" style="width:${Math.round(ins.conf * 100)}%"></span></span>
-        <span class="pct">${Math.round(ins.conf * 100)}%</span>
-      </div>
-    </div>
-    <div class="ev-head">Evidence · what supports this</div>
-    <div class="ev-list">${evHtml}</div>`;
-  card.addEventListener("click", () => { stopTour(); setActive(i); });
-  track.appendChild(card);
-
-  const dot = document.createElement("span");
-  dot.className = "dot";
-  dot.style.setProperty("--accent", accent);
-  dot.onclick = () => { stopTour(); setActive(i); };
-  dotsWrap.appendChild(dot);
-});
-const cards = [...track.children];
-const dots = [...dotsWrap.children];
+document.getElementById("hero-conf").textContent = Math.round(THESIS.conf*100)+"%";
 
 // ----------------------------------------------------------------------------
 //  Timeline canvas
 // ----------------------------------------------------------------------------
-const cv = document.getElementById("timeline");
-const ctx = cv.getContext("2d");
-let W = 0, H = 0;
-const PAD = { t: 16, b: 22, l: 14, r: 14 };
+const cv = document.getElementById("timeline"), ctx = cv.getContext("2d");
+let W=0,H=0; const PAD={t:14,b:20,l:14,r:14};
+function fitCanvas(){ const dpr=Math.min(window.devicePixelRatio||1,2); const r=cv.getBoundingClientRect();
+  cv.width=Math.max(1,r.width*dpr); cv.height=Math.max(1,r.height*dpr); ctx.setTransform(dpr,0,0,dpr,0,0); W=r.width; H=r.height; }
+const xAt = i => PAD.l + (i/(SAMPLES-1))*(W-PAD.l-PAD.r);
+const yAt = v => PAD.t + (1-v)*(H-PAD.t-PAD.b);
 
-function fit() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const r = cv.getBoundingClientRect();
-  cv.width = Math.max(1, r.width * dpr);
-  cv.height = Math.max(1, r.height * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  W = r.width; H = r.height;
-  // side padding so first / last card can center under the snap
-  const cw = cards[0].getBoundingClientRect().width;
-  const pad = Math.max(14, (track.clientWidth - cw) / 2);
-  track.style.paddingLeft = pad + "px";
-  track.style.paddingRight = pad + "px";
-  scrollToIndex(active, false);
-}
-window.addEventListener("resize", fit);
+// ----------------------------------------------------------------------------
+//  State
+// ----------------------------------------------------------------------------
+let mode = "scan";          // "scan" | "investigate"
+let scanX = 0;              // scan front (0..SAMPLES-1)
+let scanning = true;
+let detectPause = 0;        // timestamp until which scan is paused for a detection beat
+let selected = -1;
+const detected = new Set();
 
-const xAt = (idx) => PAD.l + (idx / (SAMPLES - 1)) * (W - PAD.l - PAD.r);
-const yAt = (v)  => PAD.t + (1 - v) * (H - PAD.t - PAD.b);
+const monoFont = sz => sz+"px "+getComputedStyle(document.body).getPropertyValue("--mono");
 
-function drawTimeline(now) {
-  ctx.clearRect(0, 0, W, H);
-  const activeKeys = new Set(INSIGHTS[active].sources.map(s => s.key));
+function drawTimeline(now){
+  // advance scan
+  if (mode==="scan" && scanning && now>detectPause && scanX<SAMPLES-1){
+    scanX = Math.min(SAMPLES-1, scanX + (SAMPLES/14000)* (drawTimeline._dt||16));
+    INSIGHTS.forEach((ins,i)=>{ if(!detected.has(i) && scanX>=ins.at) detect(i); });
+    if (scanX>=SAMPLES-1) document.getElementById("scan-msg").textContent="Scan complete — 4 patterns flagged. Tap any node to explore.";
+  }
+  ctx.clearRect(0,0,W,H);
+  const inv = mode==="investigate";
+  const activeKeys = inv ? new Set(INSIGHTS[selected].sources.map(s=>s.key)) : null;
+  const upTo = inv ? SAMPLES-1 : Math.floor(scanX);
 
   // grid
-  ctx.strokeStyle = "rgba(120,140,170,0.05)"; ctx.lineWidth = 1;
-  for (let i = 0; i <= 3; i++) {
-    const y = PAD.t + (i / 3) * (H - PAD.t - PAD.b);
-    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
-  }
-  // date axis
-  ctx.fillStyle = "rgba(120,135,160,0.55)"; ctx.textAlign = "center";
-  ctx.font = "10px " + getComputedStyle(document.body).getPropertyValue("--mono");
-  for (let i = 0; i <= 5; i++) {
-    const idx = Math.round((i / 5) * (SAMPLES - 1));
-    ctx.fillText(fmtDate(idx), xAt(idx), H - 7);
-  }
+  ctx.strokeStyle="rgba(120,140,170,0.05)"; ctx.lineWidth=1;
+  for(let i=0;i<=3;i++){ const y=PAD.t+(i/3)*(H-PAD.t-PAD.b); ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke(); }
+  // dates
+  ctx.fillStyle="rgba(120,135,160,0.5)"; ctx.textAlign="center"; ctx.font=monoFont(10);
+  for(let i=0;i<=5;i++){ const idx=Math.round((i/5)*(SAMPLES-1)); ctx.fillText(fmtDate(idx),xAt(idx),H-6); }
 
-  // playhead at active node
-  const px = xAt(INSIGHTS[active].at);
-  const grad = ctx.createLinearGradient(0, PAD.t, 0, H - PAD.b);
-  grad.addColorStop(0, "rgba(158,204,255,0.10)");
-  grad.addColorStop(1, "rgba(158,204,255,0)");
-  ctx.fillStyle = grad; ctx.fillRect(px - 1.5, PAD.t, 3, H - PAD.t - PAD.b);
-  ctx.strokeStyle = "rgba(170,190,225,0.35)"; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(px, PAD.t); ctx.lineTo(px, H - PAD.b); ctx.stroke();
-
-  // stream lines (dim those the active insight doesn't use)
-  for (const k of KEYS) {
-    const on = activeKeys.has(k); const c = STREAM[k].c;
-    ctx.save();
-    ctx.globalAlpha = on ? 1 : 0.16;
-    ctx.strokeStyle = c; ctx.lineWidth = 1.6; ctx.lineJoin = "round"; ctx.lineCap = "round";
-    if (on) { ctx.shadowColor = c; ctx.shadowBlur = 4; }
+  // stream lines (revealed up to scan front; dim non-active in investigate)
+  for(const k of KEYS){
+    const on = inv ? activeKeys.has(k) : true;
+    const c = STREAM[k].c;
+    ctx.save(); ctx.globalAlpha = on?1:0.16; ctx.strokeStyle=c; ctx.lineWidth=1.6;
+    ctx.lineJoin="round"; ctx.lineCap="round"; if(on){ctx.shadowColor=c; ctx.shadowBlur=4;}
     ctx.beginPath();
-    for (let i = 0; i < SAMPLES; i++) { const x = xAt(i), y = yAt(data[i][k]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    for(let i=0;i<=upTo;i++){ const x=xAt(i),y=yAt(data[i][k]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
     ctx.stroke(); ctx.restore();
   }
 
-  // insight nodes
-  const t = now / 1000;
-  INSIGHTS.forEach((ins, i) => {
-    const x = xAt(ins.at), y = yAt(data[ins.at][ins.key]), c = STREAM[ins.key].c;
-    const isA = i === active;
-    if (isA) {
-      const pulse = 0.5 + 0.5 * Math.sin(t * 2.4);
-      ctx.strokeStyle = c; ctx.globalAlpha = 0.4 + 0.3 * pulse; ctx.lineWidth = 1.4;
-      ctx.beginPath(); ctx.arc(x, y, 9 + pulse * 5, 0, Math.PI * 2); ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    ctx.shadowColor = c; ctx.shadowBlur = isA ? 12 : 0;
-    ctx.fillStyle = isA ? c : "rgba(20,24,29,1)";
-    ctx.beginPath(); ctx.arc(x, y, isA ? 6 : 4.5, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.lineWidth = 1.6; ctx.strokeStyle = c; ctx.stroke();
-    if (ins.flag && ins.flag.kind !== "risk") {
-      ctx.fillStyle = "#f5d272"; ctx.font = "9px " + getComputedStyle(document.body).getPropertyValue("--mono");
-      ctx.textAlign = "center"; ctx.fillText("★", x, y - (isA ? 16 : 11));
-    } else if (ins.flag) {
-      ctx.fillStyle = "#f5d272"; ctx.font = "9px " + getComputedStyle(document.body).getPropertyValue("--mono");
-      ctx.textAlign = "center"; ctx.fillText("⚠", x, y - (isA ? 16 : 11));
-    }
-    if (isA) {
-      ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x, y, 1.8, 0, Math.PI * 2); ctx.fill();
-    }
-  });
-
-  requestAnimationFrame(drawTimeline);
-}
-
-// node hit-testing
-cv.addEventListener("pointerdown", (e) => {
-  const r = cv.getBoundingClientRect();
-  const mx = e.clientX - r.left, my = e.clientY - r.top;
-  let best = -1, bd = 22 * 22;
-  INSIGHTS.forEach((ins, i) => {
-    const d = (xAt(ins.at) - mx) ** 2 + (yAt(data[ins.at][ins.key]) - my) ** 2;
-    if (d < bd) { bd = d; best = i; }
-  });
-  if (best >= 0) { stopTour(); setActive(best); }
-});
-
-// ----------------------------------------------------------------------------
-//  Active state + scroll sync (cards <-> timeline)
-// ----------------------------------------------------------------------------
-let active = 0;
-let progScroll = false;
-
-function scrollToIndex(i, smooth = true) {
-  const c = cards[i];
-  const left = c.offsetLeft - (track.clientWidth - c.offsetWidth) / 2;
-  progScroll = true;
-  track.scrollTo({ left, behavior: smooth ? "smooth" : "auto" });
-  clearTimeout(scrollToIndex._t);
-  scrollToIndex._t = setTimeout(() => { progScroll = false; }, smooth ? 480 : 60);
-}
-
-function setActive(i, fromScroll = false) {
-  i = Math.max(0, Math.min(INSIGHTS.length - 1, i));
-  const changed = i !== active;
-  active = i;
-  cards.forEach((c, k) => c.classList.toggle("active", k === i));
-  dots.forEach((d, k) => d.classList.toggle("on", k === i));
-  if (!fromScroll) scrollToIndex(i);
-}
-
-// derive active card from horizontal scroll position
-let rafScroll = 0;
-track.addEventListener("scroll", () => {
-  if (rafScroll) return;
-  rafScroll = requestAnimationFrame(() => {
-    rafScroll = 0;
-    if (progScroll) return;
-    const center = track.scrollLeft + track.clientWidth / 2;
-    let best = 0, bd = Infinity;
-    cards.forEach((c, i) => { const cc = c.offsetLeft + c.offsetWidth / 2; const d = Math.abs(cc - center); if (d < bd) { bd = d; best = i; } });
-    if (best !== active) setActive(best, true);
-  });
-});
-
-document.getElementById("prev").onclick = () => { stopTour(); setActive(active - 1); };
-document.getElementById("next").onclick = () => { stopTour(); setActive(active + 1); };
-document.addEventListener("keydown", (e) => {
-  if (e.key === "ArrowLeft")  { stopTour(); setActive(active - 1); }
-  if (e.key === "ArrowRight") { stopTour(); setActive(active + 1); }
-  if (e.key === "Escape") stopTour();
-  if (e.key === " " && e.target === document.body) { e.preventDefault(); startTour(); }
-});
-
-// ----------------------------------------------------------------------------
-//  Guided walk-through (sweeps the playhead along the timeline)
-// ----------------------------------------------------------------------------
-const narrator = document.getElementById("narrator");
-const narrStep = document.getElementById("narr-step");
-const narrTxt  = document.getElementById("narr-txt");
-const walkBtn  = document.getElementById("walk");
-let tourOn = false, tourToken = 0;
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-function setNarr(s, t) { narrStep.textContent = s; narrTxt.innerHTML = t; }
-
-function startTour() {
-  if (tourOn) { stopTour(); return; }
-  tourOn = true; const token = ++tourToken;
-  walkBtn.classList.add("running"); walkBtn.innerHTML = "<span>■</span> Stop";
-  narrator.classList.add("show");
-  runTour(token);
-}
-function stopTour() {
-  if (!tourOn) return;
-  tourOn = false; tourToken++;
-  walkBtn.classList.remove("running"); walkBtn.innerHTML = "<span>▶</span> Walk me through it";
-  narrator.classList.remove("show");
-}
-async function wait(token, ms) { await sleep(ms); return tourOn && token === tourToken; }
-
-async function runTour(token) {
-  setNarr("The call", "These four insights build the thesis — in the order the agent found them. Watch the timeline.");
-  if (!await wait(token, 3000)) return;
-  for (let i = 0; i < INSIGHTS.length; i++) {
-    setActive(i);
-    const ins = INSIGHTS[i];
-    const flag = ins.flag ? ` <b style="color:var(--flag)">[${ins.flag.label}]</b>` : "";
-    setNarr(`${fmtDate(ins.at)} · ${i + 1}/${INSIGHTS.length}`,
-            `${ins.h}${flag} — ${Math.round(ins.conf * 100)}% conviction, traced to ${ins.sources.length} sources below.`);
-    if (!await wait(token, 3600)) return;
+  // scan reticle (scan mode only, while scanning forward)
+  if(!inv && scanX<SAMPLES-1){
+    const sx=xAt(scanX);
+    const g=ctx.createLinearGradient(sx-46,0,sx,0);
+    g.addColorStop(0,"rgba(158,204,255,0)"); g.addColorStop(1,"rgba(158,204,255,0.12)");
+    ctx.fillStyle=g; ctx.fillRect(sx-46,PAD.t,46,H-PAD.t-PAD.b);
+    ctx.strokeStyle="rgba(180,200,255,0.7)"; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(sx,PAD.t); ctx.lineTo(sx,H-PAD.b); ctx.stroke(); ctx.setLineDash([]);
   }
-  setActive(1);
-  setNarr("Conclusion", `Four insights, two flagged, every one traced to source — net <b>${Math.round(THESIS.conf * 100)}% conviction</b>. That's the call.`);
-  if (!await wait(token, 4200)) return;
-  stopTour();
+
+  // nodes
+  const t=now/1000;
+  INSIGHTS.forEach((ins,i)=>{
+    const shown = inv ? true : detected.has(i);
+    if(!shown) return;
+    const x=xAt(ins.at), y=yAt(data[ins.at][ins.key]), c=STREAM[ins.key].c;
+    const emph = inv ? (i===selected) : !visited.has(i); // unvisited pulse in scan; selected pulse in invest
+    if(emph){ const p=0.5+0.5*Math.sin(t*2.6);
+      ctx.strokeStyle=c; ctx.globalAlpha=0.35+0.35*p; ctx.lineWidth=1.4;
+      ctx.beginPath(); ctx.arc(x,y,9+p*5,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
+    const big = inv ? i===selected : false;
+    ctx.shadowColor=c; ctx.shadowBlur=(emph||big)?12:0;
+    ctx.fillStyle=(big||(!inv&&emph))?c:"rgba(20,24,29,1)";
+    ctx.beginPath(); ctx.arc(x,y,big?6:4.6,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur=0; ctx.lineWidth=1.6; ctx.strokeStyle=c; ctx.stroke();
+    if(ins.flag){ ctx.fillStyle="#f5d272"; ctx.font=monoFont(9); ctx.textAlign="center";
+      ctx.fillText(ins.flag.kind==="risk"?"⚠":"★", x, y-(big?16:11)); }
+    if(big){ ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(x,y,1.8,0,Math.PI*2); ctx.fill(); }
+  });
+
+  drawTimeline._dt = now-(drawTimeline._last||now); drawTimeline._last=now;
+  requestAnimationFrame(drawTimeline);
 }
-walkBtn.onclick = startTour;
-document.getElementById("narr-stop").onclick = stopTour;
+const visited = new Set();
+
+cv.addEventListener("pointerdown",(e)=>{
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  let best=-1,bd=24*24;
+  INSIGHTS.forEach((ins,i)=>{ const shown = mode==="investigate"?true:detected.has(i); if(!shown) return;
+    const d=(xAt(ins.at)-mx)**2+(yAt(data[ins.at][ins.key])-my)**2; if(d<bd){bd=d;best=i;} });
+  if(best>=0) investigate(best);
+});
 
 // ----------------------------------------------------------------------------
-//  Boot
+//  Detection
 // ----------------------------------------------------------------------------
-requestAnimationFrame(() => {
-  fit();
-  setActive(0);
-  scrollToIndex(0, false);
-  requestAnimationFrame(drawTimeline);
+const toast=document.getElementById("toast");
+let toastTimer=0;
+function detect(i){
+  detected.add(i);
+  detectPause = performance.now()+650;
+  const ins=INSIGHTS[i];
+  toast.innerHTML = `✦ New insight detected — <span style="font-weight:600">${ins.h.replace(/\.$/,"")}</span>`;
+  toast.classList.add("show");
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>toast.classList.remove("show"),2600);
+}
+
+// ----------------------------------------------------------------------------
+//  Investigate: pin insight to top + tell its story through cards
+// ----------------------------------------------------------------------------
+const focus=document.getElementById("focus");
+const track=document.getElementById("track");
+const hint=document.getElementById("hint");
+const controls=document.getElementById("controls");
+let cards=[], steps=[], stepIdx=0, walkOn=false, walkToken=0;
+
+function investigate(i){
+  stopWalk();
+  selected=i; visited.add(i); mode="investigate";
+  const ins=INSIGHTS[i], accent=STREAM[ins.key].c;
+  focus.style.setProperty("--accent",accent); focus.classList.add("investigate","lit");
+
+  // focus header
+  const flagBadge = ins.flag ? `<span class="badge ${ins.flag.kind==="risk"?"risk":"flag"}">${ins.flag.kind==="risk"?"⚠":"★"} ${ins.flag.label}</span>` : "";
+  document.getElementById("ins-top").innerHTML =
+    `<span class="badge date" style="--accent:${accent}">◷ ${fmtDate(ins.at)}</span>${flagBadge}<span class="badge">${ins.sources.length} sources</span>`;
+  document.getElementById("ins-h").textContent = ins.h;
+  document.getElementById("ins-lead").textContent = "“"+ins.lead+"”";
+  document.getElementById("ins-pct").textContent = Math.round(ins.conf*100)+"%";
+  document.getElementById("ins-fill").style.width = Math.round(ins.conf*100)+"%";
+
+  // build evidence cards + a conclusion card
+  track.innerHTML=""; cards=[]; steps=[];
+  ins.sources.forEach((s,k)=>{
+    const c=STREAM[s.key].c;
+    const card=document.createElement("article"); card.className="card"; card.style.setProperty("--accent",c);
+    card.innerHTML=`<div class="cp">
+      <div class="step-row"><span class="sd"></span><span class="stream">${STREAM[s.key].label}</span>
+        <span class="origin">${s.origin}</span></div>
+      <div class="quote">${mark(s.q)}</div>
+      <div class="reason">${s.reason}</div></div>`;
+    track.appendChild(card); cards.push(card);
+    steps.push({ k:cards.length-1, txt:`<b>Step ${k+1}.</b> ${s.reason}` });
+  });
+  const cc=document.createElement("article"); cc.className="card concl"; cc.style.setProperty("--accent",accent);
+  cc.innerHTML=`<div class="cp"><span class="lab">The insight</span><h4>${ins.h}</h4>
+    <div class="cf"><span class="bar"><span class="fill" style="width:${Math.round(ins.conf*100)}%"></span></span>
+    <span class="pct">${Math.round(ins.conf*100)}% conviction</span></div></div>`;
+  track.appendChild(cc); cards.push(cc);
+  steps.push({ k:cards.length-1, txt:`<b>So:</b> ${ins.lead} Net ${Math.round(ins.conf*100)}% conviction.` });
+
+  cards.forEach((c,k)=> c.addEventListener("click",()=>{ stopWalk(); setStep(k); }));
+  hint.style.display="none"; track.classList.add("on");
+  layoutTrack(); renderControls();
+  setStep(0,false);
+  startWalk();   // analyst auto-narrates the trail
+}
+
+function backToScan(){
+  stopWalk(); mode="scan"; selected=-1;
+  focus.classList.remove("investigate","lit"); focus.style.removeProperty("--accent");
+  track.classList.remove("on"); track.innerHTML=""; hint.style.display="";
+  if(scanX>=SAMPLES-1){ hint.innerHTML="Scan complete — 4 patterns flagged.<br>Tap any node above to see how I built it."; }
+  renderControls();
+}
+document.getElementById("ins-back").onclick = backToScan;
+
+function layoutTrack(){
+  if(!cards.length) return;
+  const cw=cards[0].getBoundingClientRect().width;
+  const pad=Math.max(14,(track.clientWidth-cw)/2);
+  track.style.paddingLeft=pad+"px"; track.style.paddingRight=pad+"px";
+  scrollToStep(stepIdx,false);
+}
+function scrollToStep(k,smooth=true){
+  const c=cards[k]; if(!c) return;
+  const left=c.offsetLeft-(track.clientWidth-c.offsetWidth)/2;
+  progScroll=true; track.scrollTo({left,behavior:smooth?"smooth":"auto"});
+  clearTimeout(scrollToStep._t); scrollToStep._t=setTimeout(()=>progScroll=false,smooth?480:60);
+}
+let progScroll=false, rafS=0;
+track.addEventListener("scroll",()=>{ if(rafS) return; rafS=requestAnimationFrame(()=>{ rafS=0;
+  if(progScroll||mode!=="investigate") return;
+  const center=track.scrollLeft+track.clientWidth/2; let best=0,bd=Infinity;
+  cards.forEach((c,i)=>{ const cc=c.offsetLeft+c.offsetWidth/2,d=Math.abs(cc-center); if(d<bd){bd=d;best=i;} });
+  if(best!==stepIdx){ stopWalk(); setStep(best,true); } }); });
+
+function setStep(k,scroll=true){
+  if(k<0||k>=cards.length) return;
+  stepIdx=k;
+  cards.forEach((c,i)=>c.classList.toggle("active",i===k));
+  renderDots();
+  narrTxt.innerHTML = steps[k].txt; narrator.classList.add("show");
+  if(scroll) scrollToStep(k);
+}
+
+// ----------------------------------------------------------------------------
+//  Analyst walk (auto-narrate the evidence trail)
+// ----------------------------------------------------------------------------
+const narrator=document.getElementById("narrator"), narrTxt=document.getElementById("narr-txt");
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function startWalk(){ if(walkOn) return; walkOn=true; const tok=++walkToken; runWalk(tok); renderControls(); }
+function stopWalk(){ if(!walkOn) return; walkOn=false; walkToken++; renderControls(); }
+async function runWalk(tok){
+  for(let k=0;k<cards.length;k++){
+    if(!walkOn||tok!==walkToken) return;
+    setStep(k);
+    await sleep(k===0?2600:3200);
+  }
+  if(walkOn&&tok===walkToken){ walkOn=false; renderControls(); }
+}
+
+// ----------------------------------------------------------------------------
+//  Controls + dots (contextual)
+// ----------------------------------------------------------------------------
+function renderControls(){
+  controls.innerHTML="";
+  if(mode==="scan"){
+    const b=document.createElement("button"); b.className="btn";
+    b.innerHTML = scanX>=SAMPLES-1 ? "↻ Re-scan" : (scanning?"⏸ Pause scan":"▶ Resume scan");
+    b.onclick=()=>{ if(scanX>=SAMPLES-1){ scanX=0; detected.clear(); visited.clear(); scanning=true; document.getElementById("scan-msg").textContent="Scanning the data for patterns…"; }
+      else scanning=!scanning; renderControls(); };
+    const sk=document.createElement("button"); sk.className="btn"; sk.textContent="Reveal all ⤙";
+    sk.onclick=()=>{ scanX=SAMPLES-1; INSIGHTS.forEach((_,i)=>detected.add(i));
+      document.getElementById("scan-msg").textContent="Scan complete — 4 patterns flagged. Tap any node to explore."; renderControls(); };
+    controls.append(b); const sp=document.createElement("div"); sp.className="spacer"; controls.append(sp,sk);
+  } else {
+    const back=document.createElement("button"); back.className="btn nav"; back.textContent="‹";
+    back.onclick=()=>{ stopWalk(); setStep(stepIdx-1); };
+    const fwd=document.createElement("button"); fwd.className="btn nav"; fwd.textContent="›";
+    fwd.onclick=()=>{ stopWalk(); setStep(stepIdx+1); };
+    const dots=document.createElement("div"); dots.className="dots"; dots.id="dots";
+    const walk=document.createElement("button"); walk.className="btn accent";
+    walk.innerHTML = walkOn ? "■ Stop" : "↻ Replay walk";
+    walk.onclick=()=>{ if(walkOn) stopWalk(); else { setStep(0); startWalk(); } };
+    controls.append(back,dots,fwd,walk); renderDots();
+  }
+}
+function renderDots(){
+  const d=document.getElementById("dots"); if(!d) return; d.innerHTML="";
+  cards.forEach((c,i)=>{ const dot=document.createElement("span"); dot.className="dot"+(i===stepIdx?" on":"");
+    dot.style.setProperty("--accent",getComputedStyle(c).getPropertyValue("--accent"));
+    dot.onclick=()=>{ stopWalk(); setStep(i); }; d.appendChild(dot); });
+}
+
+window.addEventListener("resize",()=>{ fitCanvas(); if(mode==="investigate") layoutTrack(); });
+document.addEventListener("keydown",(e)=>{
+  if(e.key==="Escape" && mode==="investigate") backToScan();
+  if(mode==="investigate"){ if(e.key==="ArrowLeft"){stopWalk();setStep(stepIdx-1);} if(e.key==="ArrowRight"){stopWalk();setStep(stepIdx+1);} }
 });
+
+// boot
+requestAnimationFrame(()=>{ fitCanvas(); renderControls(); requestAnimationFrame(drawTimeline); });
 </script>
 </body>
 </html>
