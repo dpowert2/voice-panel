@@ -10,13 +10,26 @@
     --bg:#0b0d10; --panel:#14181d; --panel2:#1a1f26; --line:#262d36;
     --ink:#e6e9ed; --ink-dim:#8b95a3; --ink-faint:#5b6472;
     --research:#ef6b6b; --news:#7fd1a1; --internal:#9eccff; --flag:#f5d272;
+    --header-bg:rgba(11,13,16,.86); --shadow:rgba(0,0,0,.9);
     --mono:"SF Mono","SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+  }
+  :root[data-theme="light"] {
+    --bg:#eef1f7; --panel:#ffffff; --panel2:#f4f7fc; --line:#dce3ef;
+    --ink:#141a26; --ink-dim:#5a6678; --ink-faint:#97a1b3;
+    --research:#e5484d; --news:#0f9d76; --internal:#3567d6; --flag:#bb7d00;
+    --header-bg:rgba(247,249,253,.82); --shadow:rgba(40,60,110,.16);
   }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; }
   body { background:var(--bg); color:var(--ink); overflow:hidden;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,system-ui,sans-serif;
-    -webkit-font-smoothing:antialiased; }
+    -webkit-font-smoothing:antialiased; transition:background .3s,color .3s; }
+  :root[data-theme="light"] body {
+    background:
+      radial-gradient(1100px 520px at 82% -12%, rgba(70,120,255,.10), transparent 60%),
+      radial-gradient(820px 480px at -6% 112%, rgba(20,200,170,.07), transparent 55%),
+      linear-gradient(180deg,#f8fafe,#eaeef6);
+    background-attachment:fixed; }
   #app { display:flex; flex-direction:column; height:100dvh;
     padding:max(12px,env(safe-area-inset-top)) 0 max(10px,env(safe-area-inset-bottom)); }
 
@@ -32,12 +45,17 @@
   .conviction { text-align:right; flex:none; }
   .conviction .v { font-family:var(--mono); font-size:18px; font-weight:600; }
   .conviction .l { font-family:var(--mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint); margin-top:2px; }
+  .head-right { display:flex; align-items:center; gap:12px; flex:none; }
+  .tt { cursor:pointer; border:1px solid var(--line); background:var(--panel); color:var(--ink-dim);
+    width:34px; height:34px; border-radius:9px; font-size:15px; flex:none; line-height:1;
+    display:flex; align-items:center; justify-content:center; transition:border-color .15s,color .15s,background .15s; }
+  .tt:hover { border-color:#5a6678; color:var(--ink); }
 
   /* ---------- focus zone (pinned top) ---------- */
   #focus { margin:0 18px 10px; border:1px solid var(--line); border-radius:13px; overflow:hidden;
     background:linear-gradient(160deg,var(--panel2),var(--panel)); position:relative;
     transition:border-color .3s, box-shadow .3s; }
-  #focus.lit { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), 0 24px 56px -34px rgba(0,0,0,.9); }
+  #focus.lit { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), 0 24px 56px -34px var(--shadow); }
   #focus::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
     background:var(--accent, linear-gradient(180deg,var(--internal),var(--news))); }
   .focus-pad { padding:14px 17px; }
@@ -92,7 +110,7 @@
     border:1px solid var(--line); border-radius:13px; background:var(--panel); overflow:hidden;
     transition:border-color .3s,box-shadow .3s,opacity .3s,transform .3s; opacity:.4; }
   .card.active { opacity:1; border-color:var(--accent); transform:translateY(-2px);
-    box-shadow:0 0 0 1px var(--accent), 0 26px 60px -34px rgba(0,0,0,.9); }
+    box-shadow:0 0 0 1px var(--accent), 0 26px 60px -34px var(--shadow); }
   .card .cp { padding:15px 16px; display:flex; flex-direction:column; height:100%; }
   .step-row { display:flex; align-items:center; gap:8px; margin-bottom:9px; }
   .step-n { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase;
@@ -157,7 +175,7 @@
   #narrator { position:fixed; left:50%; bottom:calc(86px+env(safe-area-inset-bottom));
     transform:translateX(-50%) translateY(10px); z-index:45; max-width:min(640px,92vw);
     background:var(--panel2); border:1px solid var(--accent,#34506e); border-radius:11px; padding:11px 15px;
-    display:flex; align-items:center; gap:12px; box-shadow:0 22px 50px -24px rgba(0,0,0,.9);
+    display:flex; align-items:center; gap:12px; box-shadow:0 22px 50px -24px var(--shadow);
     opacity:0; pointer-events:none; transition:opacity .25s,transform .25s; }
   #narrator.show { opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
   #narrator .av { width:26px; height:26px; border-radius:50%; flex:none; background:var(--accent,#34506e);
@@ -179,7 +197,10 @@
       <div class="eyebrow"><span class="live-dot"></span> Agentic Analyst</div>
       <h1>Agent: <span class="topic">Quantum Computing</span></h1>
     </div>
-    <div class="conviction"><div class="v" id="hero-conf">81%</div><div class="l">Thesis conviction</div></div>
+    <div class="head-right">
+      <button id="theme-toggle" class="tt" aria-label="Toggle light / dark theme">☀</button>
+      <div class="conviction"><div class="v" id="hero-conf">81%</div><div class="l">Thesis conviction</div></div>
+    </div>
   </header>
 
   <div id="focus">
@@ -229,6 +250,13 @@ const STREAM = {
   internal:{ c:"#9eccff", label:"Internal · Fidelity" },
 };
 const KEYS = ["research","news","internal"];
+
+// theme-dependent canvas colors (kept in sync with CSS by applyTheme)
+const THEME_CANVAS = {
+  dark:  { grid:"rgba(120,140,170,0.05)", axis:"rgba(120,135,160,0.5)",  scan:[158,204,255] },
+  light: { grid:"rgba(40,70,130,0.09)",   axis:"rgba(70,90,120,0.6)",    scan:[53,103,214] },
+};
+let tc = Object.assign({ nodeFill:"#14181d" }, THEME_CANVAS.dark);
 
 const THESIS = { conf:0.81, stmt:`Quantum is being <b>repriced in plain sight</b> — regulation is making it a <b>compliance mandate</b> while the durable margin sits <b>upstream in the supply chain</b>. I'm assembling that call from the patterns below.` };
 
@@ -358,10 +386,10 @@ function drawTimeline(now){
   const upTo = inv ? SAMPLES-1 : Math.floor(scanX);
 
   // grid
-  ctx.strokeStyle="rgba(120,140,170,0.05)"; ctx.lineWidth=1;
+  ctx.strokeStyle=tc.grid; ctx.lineWidth=1;
   for(let i=0;i<=3;i++){ const y=PAD.t+(i/3)*(H-PAD.t-PAD.b); ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke(); }
   // dates
-  ctx.fillStyle="rgba(120,135,160,0.5)"; ctx.textAlign="center"; ctx.font=monoFont(10);
+  ctx.fillStyle=tc.axis; ctx.textAlign="center"; ctx.font=monoFont(10);
   for(let i=0;i<=5;i++){ const idx=Math.round((i/5)*(SAMPLES-1)); ctx.fillText(fmtDate(idx),xAt(idx),H-6); }
 
   // stream lines (revealed up to scan front; dim non-active in investigate)
@@ -377,11 +405,11 @@ function drawTimeline(now){
 
   // scan reticle (scan mode only, while scanning forward)
   if(!inv && scanX<SAMPLES-1){
-    const sx=xAt(scanX);
+    const sx=xAt(scanX), sc=tc.scan.join(",");
     const g=ctx.createLinearGradient(sx-46,0,sx,0);
-    g.addColorStop(0,"rgba(158,204,255,0)"); g.addColorStop(1,"rgba(158,204,255,0.12)");
+    g.addColorStop(0,`rgba(${sc},0)`); g.addColorStop(1,`rgba(${sc},0.14)`);
     ctx.fillStyle=g; ctx.fillRect(sx-46,PAD.t,46,H-PAD.t-PAD.b);
-    ctx.strokeStyle="rgba(180,200,255,0.7)"; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.strokeStyle=`rgba(${sc},0.7)`; ctx.lineWidth=1; ctx.setLineDash([3,3]);
     ctx.beginPath(); ctx.moveTo(sx,PAD.t); ctx.lineTo(sx,H-PAD.b); ctx.stroke(); ctx.setLineDash([]);
   }
 
@@ -397,7 +425,7 @@ function drawTimeline(now){
       ctx.beginPath(); ctx.arc(x,y,9+p*5,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
     const big = inv ? i===selected : false;
     ctx.shadowColor=c; ctx.shadowBlur=(emph||big)?12:0;
-    ctx.fillStyle=(big||(!inv&&emph))?c:"rgba(20,24,29,1)";
+    ctx.fillStyle=(big||(!inv&&emph))?c:tc.nodeFill;
     ctx.beginPath(); ctx.arc(x,y,big?6:4.6,0,Math.PI*2); ctx.fill();
     ctx.shadowBlur=0; ctx.lineWidth=1.6; ctx.strokeStyle=c; ctx.stroke();
     if(ins.flag){ ctx.fillStyle="#f5d272"; ctx.font=monoFont(9); ctx.textAlign="center";
@@ -596,7 +624,27 @@ document.addEventListener("click",(e)=>{
   stopWalk(); setStep(loc.k);
 });
 
+// ----------------------------------------------------------------------------
+//  Theme (dark <-> minimalist light); canvas colors follow the CSS variables
+// ----------------------------------------------------------------------------
+function applyTheme(name){
+  document.documentElement.setAttribute("data-theme", name);
+  try { localStorage.setItem("rg-theme", name); } catch(e){}
+  const cs = getComputedStyle(document.documentElement);
+  STREAM.research.c = cs.getPropertyValue("--research").trim();
+  STREAM.news.c     = cs.getPropertyValue("--news").trim();
+  STREAM.internal.c = cs.getPropertyValue("--internal").trim();
+  tc.nodeFill = cs.getPropertyValue("--panel").trim() || tc.nodeFill;
+  Object.assign(tc, THEME_CANVAS[name] || THEME_CANVAS.dark);
+  const tb = document.getElementById("theme-toggle"); if(tb) tb.textContent = name==="light" ? "☾" : "☀";
+  // rebuild the open insight so card/dot accents pick up the new palette
+  if(mode==="investigate" && selected>=0){ const k=stepIdx; investigate(selected); stopWalk(); setStep(k,false); }
+}
+document.getElementById("theme-toggle").onclick = () =>
+  applyTheme(document.documentElement.getAttribute("data-theme")==="light" ? "dark" : "light");
+
 // boot
+(function(){ let saved="dark"; try { saved = localStorage.getItem("rg-theme") || "dark"; } catch(e){} applyTheme(saved); })();
 requestAnimationFrame(()=>{ fitCanvas(); renderControls(); requestAnimationFrame(drawTimeline); });
 </script>
 </body>
