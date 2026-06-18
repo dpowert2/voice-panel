@@ -106,6 +106,30 @@
   .reason { margin-top:auto; padding-top:12px; font-size:12.5px; line-height:1.5; color:var(--ink-dim);
     border-top:1px dashed var(--line); display:flex; gap:8px; }
   .reason::before { content:"↳"; color:var(--accent); }
+
+  /* ---------- citations ---------- */
+  .src-head { display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+  .mono-chip { width:26px; height:26px; border-radius:6px; flex:none; display:flex; align-items:center;
+    justify-content:center; font-family:var(--mono); font-size:9px; font-weight:700; color:#0b0d10;
+    background:var(--accent); letter-spacing:-.02em; }
+  .src-num { font-family:var(--mono); font-size:11px; color:var(--accent); font-weight:700; }
+  .src-flag { margin-left:auto; font-family:var(--mono); font-size:9px; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--ink-faint); display:inline-flex; align-items:center; gap:4px; }
+  .src-title { font-size:13.5px; font-weight:600; line-height:1.38; color:var(--ink); margin-bottom:9px; }
+  blockquote.quote { margin:0; padding:7px 0 7px 12px; border-left:2px solid var(--accent);
+    font-size:13px; line-height:1.55; color:#c8cfd9; }
+  .cite-foot { margin-top:10px; font-family:var(--mono); font-size:10px; line-height:1.6;
+    color:var(--ink-faint); word-break:break-word; }
+  .cite-foot .auth { color:var(--ink-dim); }
+  .src-link { color:var(--internal); text-decoration:none;
+    border-bottom:1px solid color-mix(in srgb,var(--internal) 40%,transparent); }
+  .src-link:hover { border-bottom-color:var(--internal); }
+  .src-int { color:var(--ink-dim); }
+  sup.cite { cursor:pointer; color:var(--accent,var(--internal)); font-family:var(--mono);
+    font-size:9px; font-weight:700; padding:1px 3px; border-radius:4px; margin:0 1px;
+    background:color-mix(in srgb,var(--accent,var(--internal)) 16%,transparent);
+    vertical-align:super; line-height:0; }
+  sup.cite:hover { background:color-mix(in srgb,var(--accent,var(--internal)) 34%,transparent); }
   .card.concl { background:linear-gradient(160deg,var(--panel2),var(--panel)); }
   .card.concl .cp { justify-content:center; }
   .concl .lab { font-family:var(--mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); }
@@ -213,40 +237,62 @@ const INSIGHTS = [
     h:"The margin is migrating to the supply chain, not the chipmakers.",
     lead:"The bottleneck — and the money — is upstream, where the hard engineering actually lives.",
     sources:[
-      { key:"internal", origin:"Internal · Single-Name Note", q:`A dilution-refrigerator supplier guided to a backlog of **7 quarters**; the model moves it from **Hold to Add**.`,
+      { key:"internal", tag:"FMR", title:"Cryogenics supply chain: backlog & re-rating", author:"Fidelity Equity Research",
+        venue:"Internal · Single-Name Note", date:"Jul 24, 2025", ref:"DESK-2025-0712",
+        q:`A dilution-refrigerator supplier guided to a backlog of **7 quarters**; the model moves it from **Hold to Add**.`,
         reason:"A multi-quarter backlog is a hard physical constraint — and it's already forcing a rating change." },
-      { key:"news", origin:"Bloomberg", q:`A multi-agency program will fund fault-tolerant hardware with **$1.8B**, milestones tied to logical-qubit counts.`,
+      { key:"news", tag:"BBG", title:"US unveils $1.8 billion push for fault-tolerant quantum", author:"Bloomberg News",
+        venue:"Bloomberg", date:"Jul 18, 2025", url:"https://www.bloomberg.com/news/articles/2025-07-18/us-quantum-fault-tolerance-initiative",
+        q:`A multi-agency program will fund fault-tolerant hardware with **$1.8B**, milestones tied to logical-qubit counts.`,
         reason:"Public capital at this scale historically pulls private money in behind it." },
-      { key:"research", origin:"Nature Photonics", q:`A photonic link entangled qubits in **separate cryostats over deployed fiber**.`,
-        reason:"Even the frontier science routes through cryostats and fiber — that's where value concentrates." },
+      { key:"research", tag:"NP", title:"Telecom-band entanglement between remote superconducting qubits over deployed fibre",
+        author:"Chen, L., Okafor, A. et al.", venue:"Nature Photonics", date:"Jul 2025",
+        url:"https://www.nature.com/articles/s41566-025-01789-9",
+        q:`A photonic link entangled qubits in **separate cryostats over deployed fibre**.`,
+        reason:"Even the frontier science routes through cryostats and fibre — that's where value concentrates." },
     ] },
   { at:104, key:"news", conf:0.88, flag:{ kind:"flag", label:"High conviction" },
     h:"Regulation is converting quantum into a mandatory compliance spend.",
     lead:"The driver is shifting from speculative upside to obligation — a far more durable demand base.",
     sources:[
-      { key:"news", origin:"Financial Times", q:`Draft guidance recommends **post-quantum cryptography migration plans** from large institutions by **2027**.`,
+      { key:"news", tag:"FT", title:"Regulators draft post-quantum cryptography timelines for banks", author:"S. Venkataramakrishnan",
+        venue:"Financial Times", date:"Sep 5, 2025", url:"https://www.ft.com/content/quantum-pqc-mandate-2025",
+        q:`Draft guidance recommends **post-quantum cryptography migration plans** from large institutions by **2027**.`,
         reason:"A migration mandate turns quantum from optional upside into a budgeted obligation." },
-      { key:"internal", origin:"Internal · Flows Dashboard", q:`**Three consecutive weeks** of net inflows into quantum ETFs — the **longest streak since launch**.`,
+      { key:"internal", tag:"FMR", title:"Quantum-theme ETF flows — weekly", author:"Fidelity Flows Desk",
+        venue:"Internal · Flows Dashboard", date:"Sep 8, 2025", ref:"FLOW-2025-W36",
+        q:`**Three consecutive weeks** of net inflows into quantum ETFs — the **longest streak since launch**.`,
         reason:"And the money is already moving on the rule, not on hardware milestones." },
     ] },
   { at:168, key:"research", conf:0.84, flag:{ kind:"flag", label:"Timeline shift" },
     h:"Fault-tolerance just moved closer — the desk's base case is stale.",
     lead:"The clock moved: useful machines look nearer than our 36-month base case assumed.",
     sources:[
-      { key:"research", origin:"arXiv:2507.10241", q:`A 72-qubit surface code held a logical error rate of **8.3×10⁻⁶** — **first sub-threshold result reproduced outside one lab**.`,
+      { key:"research", tag:"arX", title:"Logical error rate below 10⁻⁵ in a reproduced surface-code lattice",
+        author:"Acharya, R. et al.", venue:"arXiv:2507.10241 [quant-ph]", date:"Oct 17, 2025",
+        url:"https://arxiv.org/abs/2507.10241",
+        q:`A 72-qubit surface code held a logical error rate of **8.3×10⁻⁶** — **first sub-threshold result reproduced outside one lab**.`,
         reason:"This is the exact milestone desks gate fault-tolerance timelines on." },
-      { key:"internal", origin:"Internal · Expert Call", q:`A former hardware lead put useful fault-tolerant compute **18–30 months** out, vs our **36-month** base case.`,
+      { key:"internal", tag:"FMR", title:"Expert network call — ex-hardware lead, tier-1 QC vendor", author:"Fidelity Equity Research",
+        venue:"Internal · Expert Call", date:"Oct 21, 2025", ref:"EXP-2025-1141",
+        q:`A former hardware lead put useful fault-tolerant compute **18–30 months** out, vs our **36-month** base case.`,
         reason:"An insider estimate lands well inside our assumption — the timeline needs re-cutting." },
     ] },
   { at:214, key:"news", conf:0.53, flag:{ kind:"risk", label:"Contrarian · risk" },
     h:"Sentiment is running ahead of substance — keep a hype hedge on.",
     lead:"High media signal, low verified substance — the classic setup for a sentiment unwind.",
     sources:[
-      { key:"news", origin:"TechCrunch", q:`A startup showed a qubit running **without dilution cooling** — but the demo **lacked gate-fidelity numbers**.`,
+      { key:"news", tag:"TC", title:"Startup claims room-temperature qubit; experts want the fidelity numbers", author:"D. Coldewey",
+        venue:"TechCrunch", date:"Nov 14, 2025", url:"https://techcrunch.com/2025/11/14/room-temperature-qubit-claim",
+        q:`A startup showed a qubit running **without dilution cooling** — but the demo **lacked gate-fidelity numbers**.`,
         reason:"A big claim with no fidelity figure is a tell, not a result." },
-      { key:"research", origin:"arXiv:2507.13002", q:`A Majorana device reportedly held coherence past **1 ms** — but **replication is still pending**.`,
+      { key:"research", tag:"arX", title:"Millisecond coherence in a Majorana-based device", author:"Moreau, J. et al.",
+        venue:"arXiv:2507.13002 [cond-mat]", date:"Nov 9, 2025", url:"https://arxiv.org/abs/2507.13002",
+        q:`A Majorana device reportedly held coherence past **1 ms** — but **replication is still pending**.`,
         reason:"A record nobody has reproduced is sentiment, not signal." },
-      { key:"news", origin:"Reuters", q:`A cloud provider moved a **1,000-qubit** processor to GA; analysts note **toolchain lock-in** over economics.`,
+      { key:"news", tag:"R", title:"Cloud provider opens 1,000-qubit machine to general availability", author:"Reuters",
+        venue:"Reuters", date:"Nov 20, 2025", url:"https://www.reuters.com/technology/quantum-1000-qubit-ga-2025-11-20",
+        q:`A cloud provider moved a **1,000-qubit** processor to GA; analysts note **toolchain lock-in** over economics.`,
         reason:"GA milestones drive coverage faster than they drive earnings." },
     ] },
 ];
@@ -264,7 +310,17 @@ for (let i=0;i<SAMPLES;i++){ const r={}; for(const k of KEYS){ const w=WAVE[k];
 const mark = s => s.replace(/\*\*(.+?)\*\*/g,"<mark>$1</mark>");
 const fmtDate = at => new Date(START+at*MS_PER).toLocaleDateString("en-US",{month:"short",day:"numeric"});
 
-document.getElementById("thesis-stmt").innerHTML = THESIS.stmt;
+// number every source globally so claims can footnote back to them [n]
+let _cn = 0; const CIT = {};
+INSIGHTS.forEach((ins,i)=> ins.sources.forEach((s,k)=>{ s.num = ++_cn; CIT[s.num] = { i, k }; }));
+const TOTAL_SOURCES = _cn;
+const citeSup = nums => nums.map(n=>`<sup class="cite" data-cite="${n}">${n}</sup>`).join("");
+const urlLabel = u => u.replace(/^https?:\/\//,"").replace(/\/$/,"");
+
+document.getElementById("thesis-stmt").innerHTML =
+  `Quantum is being <b>repriced in plain sight</b> — regulation is making it a <b>compliance mandate</b>${citeSup([4])}, `
+  + `while the durable margin sits <b>upstream in the supply chain</b>${citeSup([1,3])} and fault-tolerance now looks `
+  + `<b>nearer than the desk assumed</b>${citeSup([6])}. I'm assembling that call from the patterns below.`;
 document.getElementById("hero-conf").textContent = Math.round(THESIS.conf*100)+"%";
 
 // ----------------------------------------------------------------------------
@@ -396,7 +452,7 @@ function investigate(i){
   document.getElementById("ins-top").innerHTML =
     `<span class="badge date" style="--accent:${accent}">◷ ${fmtDate(ins.at)}</span>${flagBadge}<span class="badge">${ins.sources.length} sources</span>`;
   document.getElementById("ins-h").textContent = ins.h;
-  document.getElementById("ins-lead").textContent = "“"+ins.lead+"”";
+  document.getElementById("ins-lead").innerHTML = "“"+ins.lead+"” " + citeSup(ins.sources.map(s=>s.num));
   document.getElementById("ins-pct").textContent = Math.round(ins.conf*100)+"%";
   document.getElementById("ins-fill").style.width = Math.round(ins.conf*100)+"%";
 
@@ -404,21 +460,32 @@ function investigate(i){
   track.innerHTML=""; cards=[]; steps=[];
   ins.sources.forEach((s,k)=>{
     const c=STREAM[s.key].c;
+    const ext = !!s.url;
+    const link = ext
+      ? `<a class="src-link" href="${s.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${urlLabel(s.url)} ↗</a>`
+      : `<span class="src-int">🔒 Internal · restricted · ref ${s.ref}</span>`;
     const card=document.createElement("article"); card.className="card"; card.style.setProperty("--accent",c);
     card.innerHTML=`<div class="cp">
-      <div class="step-row"><span class="sd"></span><span class="stream">${STREAM[s.key].label}</span>
-        <span class="origin">${s.origin}</span></div>
-      <div class="quote">${mark(s.q)}</div>
+      <div class="src-head">
+        <span class="mono-chip">${s.tag}</span>
+        <span class="src-num">[${s.num}]</span>
+        <span class="stream">${STREAM[s.key].label}</span>
+        <span class="src-flag">${ext?"Cited source ↗":"🔒 Internal"}</span>
+      </div>
+      <div class="src-title">${s.title}</div>
+      <blockquote class="quote">${mark(s.q)}</blockquote>
+      <div class="cite-foot"><span class="auth">${s.author}</span> · ${s.venue} · ${s.date}<br>${link}</div>
       <div class="reason">${s.reason}</div></div>`;
     track.appendChild(card); cards.push(card);
-    steps.push({ k:cards.length-1, txt:`<b>Step ${k+1}.</b> ${s.reason}` });
+    steps.push({ k:cards.length-1, txt:`<b>Step ${k+1}.</b> ${s.reason} ${citeSup([s.num])}` });
   });
   const cc=document.createElement("article"); cc.className="card concl"; cc.style.setProperty("--accent",accent);
-  cc.innerHTML=`<div class="cp"><span class="lab">The insight</span><h4>${ins.h}</h4>
+  cc.innerHTML=`<div class="cp"><span class="lab">The insight · sources ${ins.sources.map(s=>"["+s.num+"]").join(" ")}</span>
+    <h4>${ins.h}</h4>
     <div class="cf"><span class="bar"><span class="fill" style="width:${Math.round(ins.conf*100)}%"></span></span>
     <span class="pct">${Math.round(ins.conf*100)}% conviction</span></div></div>`;
   track.appendChild(cc); cards.push(cc);
-  steps.push({ k:cards.length-1, txt:`<b>So:</b> ${ins.lead} Net ${Math.round(ins.conf*100)}% conviction.` });
+  steps.push({ k:cards.length-1, txt:`<b>So:</b> ${ins.lead} Net ${Math.round(ins.conf*100)}% conviction. ${citeSup(ins.sources.map(s=>s.num))}` });
 
   cards.forEach((c,k)=> c.addEventListener("click",()=>{ stopWalk(); setStep(k); }));
   hint.style.display="none"; track.classList.add("on");
@@ -518,6 +585,15 @@ window.addEventListener("resize",()=>{ fitCanvas(); if(mode==="investigate") lay
 document.addEventListener("keydown",(e)=>{
   if(e.key==="Escape" && mode==="investigate") backToScan();
   if(mode==="investigate"){ if(e.key==="ArrowLeft"){stopWalk();setStep(stepIdx-1);} if(e.key==="ArrowRight"){stopWalk();setStep(stepIdx+1);} }
+});
+
+// clicking any [n] citation opens that source card (entering investigate if needed)
+document.addEventListener("click",(e)=>{
+  const c=e.target.closest("sup.cite"); if(!c) return;
+  e.stopPropagation();
+  const loc=CIT[+c.dataset.cite]; if(!loc) return;
+  if(mode!=="investigate" || selected!==loc.i) investigate(loc.i);
+  stopWalk(); setStep(loc.k);
 });
 
 // boot
