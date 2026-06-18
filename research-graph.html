@@ -4,10 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#0b0d10" />
-<title>Agent · Quantum — Research Graph</title>
+<title>Agent · Quantum — Analyst Brief</title>
 <style>
   :root {
-    /* aligned with the main panel app palette */
     --bg:        #0b0d10;
     --panel:     #14181d;
     --panel2:    #1a1f26;
@@ -15,850 +14,574 @@
     --ink:       #e6e9ed;
     --ink-dim:   #8b95a3;
     --ink-faint: #5b6472;
-    --research:  #ef6b6b;   /* red   */
-    --news:      #7fd1a1;   /* green */
-    --internal:  #9eccff;   /* blue  */
+    --research:  #ef6b6b;
+    --news:      #7fd1a1;
+    --internal:  #9eccff;
+    --flag:      #f5d272;
     --mono: "SF Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+    --dock-h: 124px;
   }
-
   * { box-sizing: border-box; }
-  html, body {
-    margin: 0;
-    height: 100%;
-    background: var(--bg);
-    color: var(--ink);
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
-    overscroll-behavior: none;
-  }
-  body { height: 100dvh; overflow: hidden; }
-
-  #app {
-    display: flex; flex-direction: column;
-    height: 100dvh;
-    padding: max(16px, env(safe-area-inset-top)) 18px 16px;
-    gap: 12px;
+    padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom));
   }
 
   /* ---------- header ---------- */
   header {
-    display: flex; align-items: flex-start; justify-content: space-between;
-    gap: 18px; flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 30;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    padding: 12px max(16px, env(safe-area-inset-left)) 12px max(16px, env(safe-area-inset-left));
+    background: rgba(11,13,16,.86); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
   }
-  .title-wrap { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .brand { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .eyebrow {
-    display: flex; align-items: center; gap: 8px;
-    font-family: var(--mono);
-    font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-dim);
+    display: flex; align-items: center; gap: 7px; font-family: var(--mono);
+    font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-dim);
   }
   .live-dot {
-    width: 7px; height: 7px; border-radius: 50%; background: var(--research);
-    box-shadow: 0 0 0 0 rgba(239,107,107,.5); animation: pulse 1.8s infinite; flex: none;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--research); flex: none;
+    box-shadow: 0 0 0 0 rgba(239,107,107,.5); animation: pulse 1.8s infinite;
   }
   @keyframes pulse {
-    0%   { box-shadow: 0 0 0 0 rgba(239,107,107,.45); }
-    70%  { box-shadow: 0 0 0 6px rgba(239,107,107,0); }
+    0% { box-shadow: 0 0 0 0 rgba(239,107,107,.45); }
+    70% { box-shadow: 0 0 0 6px rgba(239,107,107,0); }
     100% { box-shadow: 0 0 0 0 rgba(239,107,107,0); }
   }
-  h1 {
-    margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.01em; line-height: 1.1;
-    color: var(--ink);
-  }
-  h1 .topic { color: var(--internal); }
-  .status-line {
-    font-family: var(--mono);
-    font-size: 12px; color: var(--ink-dim); display: flex; align-items: center; gap: 8px;
-    min-height: 16px;
-  }
-  .spinner {
-    width: 11px; height: 11px; border-radius: 50%; flex: none;
-    border: 1.5px solid var(--line); border-top-color: var(--ink-dim); animation: spin .9s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  #query { color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #query b { color: var(--ink); font-weight: 600; }
+  .brand h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+  .brand h1 .topic { color: var(--internal); }
+  .conviction { text-align: right; flex: none; }
+  .conviction .v { font-family: var(--mono); font-size: 18px; font-weight: 600; }
+  .conviction .l { font-family: var(--mono); font-size: 9px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-faint); margin-top: 2px; }
 
-  /* legend / stats */
-  .legend { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
-  .chips { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
-  .chip {
-    display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
-    padding: 6px 11px; border-radius: 7px; border: 1px solid var(--line);
-    background: var(--panel); font-size: 12px; color: var(--ink-dim);
-    transition: border-color .15s, color .15s, opacity .15s;
-  }
-  .chip:hover { border-color: #38424f; color: var(--ink); }
-  .chip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-  .chip.off { opacity: .4; }
-  .chip[data-k="research"] .dot { background: var(--research); }
-  .chip[data-k="news"]     .dot { background: var(--news); }
-  .chip[data-k="internal"] .dot { background: var(--internal); }
-  .chip .n { font-family: var(--mono); color: var(--ink-faint); font-size: 11px; }
+  main { max-width: 760px; margin: 0 auto; padding: 22px 16px 8px; }
 
-  .stats { display: flex; gap: 18px; }
-  .stat { text-align: right; }
-  .stat .v { font-family: var(--mono); font-size: 17px; font-weight: 600; color: var(--ink); }
-  .stat .l {
-    font-family: var(--mono);
-    font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint);
-    margin-top: 2px;
+  .sec-label {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-faint); margin: 30px 2px 12px; display: flex; align-items: center; gap: 9px;
+  }
+  .sec-label::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  /* ---------- thesis hero ---------- */
+  .thesis {
+    border: 1px solid var(--line); border-radius: 14px; padding: 22px 22px 20px;
+    background: linear-gradient(160deg, var(--panel2), var(--panel));
+    position: relative; overflow: hidden;
+  }
+  .thesis::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: linear-gradient(180deg, var(--internal), var(--news));
+  }
+  .thesis .tag { font-family: var(--mono); font-size: 10px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--internal); }
+  .thesis .stmt { font-size: 20px; line-height: 1.42; font-weight: 550; margin: 11px 0 0;
+    letter-spacing: -.01em; }
+  .thesis .stmt b { color: #fff; font-weight: 650; }
+  .thesis .meta { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 16px;
+    font-family: var(--mono); font-size: 11px; color: var(--ink-faint); align-items: center; }
+  .thesis .meta .val { color: var(--ink); }
+  .walk {
+    margin-top: 18px; display: inline-flex; align-items: center; gap: 9px; cursor: pointer;
+    border: 1px solid #34506e; background: rgba(158,204,255,.08); color: #cfe4ff;
+    border-radius: 9px; padding: 11px 16px; font-size: 13.5px; font-weight: 600;
+    font-family: var(--mono); letter-spacing: .02em; transition: background .15s, border-color .15s;
+  }
+  .walk:hover { background: rgba(158,204,255,.14); border-color: #436a92; }
+  .walk.running { border-color: #5a3b3d; background: rgba(239,107,107,.1); color: #f3a8a8; }
+
+  /* ---------- insight cards ---------- */
+  .insight {
+    border: 1px solid var(--line); border-radius: 13px; padding: 17px 18px;
+    background: var(--panel); margin-bottom: 12px; position: relative;
+    transition: border-color .25s, box-shadow .25s, transform .25s;
+  }
+  .insight::before {
+    content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px;
+    border-radius: 3px; background: var(--accent, var(--line)); opacity: .65;
+  }
+  .insight.flagged { background: linear-gradient(120deg, rgba(245,210,114,.05), var(--panel) 60%); }
+  .insight.flagged::before { background: var(--flag); opacity: 1; }
+  .insight.active {
+    border-color: var(--accent, var(--internal));
+    box-shadow: 0 0 0 1px var(--accent, var(--internal)), 0 20px 50px -30px rgba(0,0,0,.9);
+    transform: translateY(-1px);
+  }
+  .insight .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 9px; }
+  .badge {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-dim);
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .badge.flag { color: #1a1407; background: var(--flag); border-color: var(--flag); font-weight: 700; }
+  .badge.risk { color: var(--flag); background: rgba(245,210,114,.08); border-color: #4a4327; }
+  .badge .sd { width: 7px; height: 7px; border-radius: 50%; }
+  .insight h3 { margin: 0; font-size: 16.5px; font-weight: 600; line-height: 1.34; letter-spacing: -.01em; }
+  .insight p { margin: 8px 0 0; font-size: 13.5px; line-height: 1.55; color: #c2c9d4; }
+  .insight .foot { display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+  .conf { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; }
+  .conf .bar { flex: 1; min-width: 80px; max-width: 180px; height: 5px; border-radius: 4px;
+    background: var(--panel2); overflow: hidden; }
+  .conf .fill { height: 100%; border-radius: 4px; background: var(--accent, var(--internal)); }
+  .conf .pct { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
+  .conf .word { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-faint); }
+  .trace {
+    cursor: pointer; border: 1px solid var(--line); background: var(--panel2); color: var(--ink);
+    border-radius: 8px; padding: 8px 13px; font-size: 12px; font-family: var(--mono);
+    display: inline-flex; align-items: center; gap: 7px; transition: border-color .15s, background .15s;
+    flex: none;
+  }
+  .trace:hover { border-color: #38424f; background: #20262f; }
+  .trace .c { color: var(--ink-faint); }
+
+  /* ---------- evidence ledger ---------- */
+  .evidence {
+    border: 1px solid var(--line); border-radius: 12px; padding: 15px 16px;
+    background: var(--panel); margin-bottom: 10px; position: relative;
+    transition: border-color .3s, background .3s, box-shadow .3s, opacity .3s;
+  }
+  .evidence .ehead { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
+  .evidence .sd { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+  .evidence .stream { font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--accent); font-weight: 600; }
+  .evidence .origin { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint);
+    margin-left: auto; text-align: right; }
+  .evidence .quote { font-size: 14px; line-height: 1.58; color: #c8cfd9; }
+  .evidence mark {
+    background: transparent; color: var(--ink); padding: 0 1px; border-radius: 3px;
+    border-bottom: 1px dashed var(--ink-faint); transition: background .3s, color .3s, border-color .3s;
+  }
+  .evidence .supports { margin-top: 10px; font-family: var(--mono); font-size: 10.5px;
+    color: var(--ink-faint); display: none; }
+  .evidence.dim { opacity: .4; }
+  .evidence.active {
+    border-color: var(--accent); background: var(--panel2);
+    box-shadow: 0 0 0 1px var(--accent), 0 18px 44px -28px rgba(0,0,0,.85);
+  }
+  .evidence.active mark { background: color-mix(in srgb, var(--accent) 26%, transparent);
+    border-bottom-color: transparent; color: #fff; }
+  .evidence.active .supports { display: block; color: var(--accent); }
+  .evidence.flash { animation: flash .9s ease; }
+  @keyframes flash {
+    0% { box-shadow: 0 0 0 0 var(--accent), 0 0 0 0 transparent; }
+    35% { box-shadow: 0 0 0 1px var(--accent), 0 0 26px -2px var(--accent); }
+    100% { box-shadow: 0 0 0 1px var(--accent), 0 18px 44px -28px rgba(0,0,0,.85); }
   }
 
-  /* ---------- graph ---------- */
-  .stage {
-    position: relative; flex: 1; min-height: 0; border-radius: 12px; overflow: hidden;
-    border: 1px solid var(--line); background: var(--panel);
+  /* ---------- bottom dock (still researching) ---------- */
+  #dock {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: var(--dock-h);
+    padding: 10px 16px calc(8px + env(safe-area-inset-bottom));
+    background: rgba(13,16,20,.93); backdrop-filter: blur(12px);
+    border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px;
   }
-  canvas { display: block; width: 100%; height: 100%; }
-  #graph { cursor: crosshair; touch-action: none; }
+  .dock-head { display: flex; align-items: center; gap: 12px; font-family: var(--mono);
+    font-size: 11px; color: var(--ink-dim); }
+  #dock-status { display: flex; align-items: center; gap: 7px; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #dock-status b { color: var(--ink); font-weight: 600; }
+  .dock-legend { margin-left: auto; display: flex; gap: 12px; flex: none; }
+  .dock-legend span { display: inline-flex; align-items: center; gap: 5px; font-size: 10px;
+    color: var(--ink-faint); transition: opacity .3s; }
+  .dock-legend i { width: 7px; height: 7px; border-radius: 50%; }
+  .dock-legend .off { opacity: .3; }
+  #spark { flex: 1; width: 100%; display: block; }
 
-  .hint {
-    position: absolute; left: 14px; bottom: 11px; font-family: var(--mono);
-    font-size: 10.5px; color: var(--ink-faint); letter-spacing: .02em; pointer-events: none;
+  /* ---------- narrator bar ---------- */
+  #narrator {
+    position: fixed; left: 50%; bottom: calc(var(--dock-h) + 14px + env(safe-area-inset-bottom));
+    transform: translateX(-50%) translateY(10px); z-index: 45; max-width: min(620px, 92vw);
+    background: var(--panel2); border: 1px solid #34506e; border-radius: 11px;
+    padding: 11px 15px; display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 22px 50px -24px rgba(0,0,0,.9); opacity: 0; pointer-events: none;
+    transition: opacity .25s, transform .25s;
   }
-  .paused-badge {
-    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-    font-family: var(--mono);
-    font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #e9c06a;
-    border: 1px solid #3a3320; background: rgba(40,34,18,.7);
-    padding: 5px 12px; border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none;
-    white-space: nowrap;
-  }
-  .paused-badge.show { opacity: 1; }
+  #narrator.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+  #narrator .step { font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--internal); flex: none; }
+  #narrator .txt { font-size: 13px; line-height: 1.4; color: var(--ink); }
+  #narrator .stop { margin-left: auto; flex: none; cursor: pointer; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink-dim); border-radius: 7px; padding: 6px 11px;
+    font-family: var(--mono); font-size: 11px; }
+  #narrator .stop:hover { color: var(--ink); border-color: #38424f; }
 
-  /* tooltip */
-  #tooltip {
-    position: absolute; pointer-events: none; z-index: 7; opacity: 0; transform: translateY(3px);
-    transition: opacity .12s, transform .12s; max-width: 230px;
-    background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
-    padding: 9px 11px; font-size: 12px; line-height: 1.35; color: var(--ink);
-    box-shadow: 0 14px 32px -16px rgba(0,0,0,.85);
-  }
-  #tooltip.show { opacity: 1; transform: translateY(0); }
-  #tooltip .src { font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 3px; }
-  #tooltip .t { font-weight: 600; }
-  #tooltip .meta { font-family: var(--mono); color: var(--ink-faint); font-size: 10px; margin-top: 4px; }
-
-  /* ---------- scrubber ---------- */
-  .scrub-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .controls { display: flex; align-items: center; gap: 7px; flex: none; }
-  button.ctl {
-    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
-    border-radius: 7px; height: 32px; padding: 0 12px; font-size: 12.5px; cursor: pointer;
-    display: flex; align-items: center; gap: 6px; transition: border-color .15s, background .15s;
-    font-family: var(--mono); letter-spacing: .02em;
-  }
-  button.ctl:hover { border-color: #38424f; background: var(--panel2); }
-  button.ctl.live { border-color: #4a2f31; color: #f0a3a3; }
-
-  .minimap {
-    position: relative; flex: 1 1 240px; height: 44px; border-radius: 8px;
-    border: 1px solid var(--line); background: var(--panel); overflow: hidden; cursor: pointer;
-    touch-action: none;
-  }
-  #mini { display: block; width: 100%; height: 100%; }
-  .speed {
-    display: flex; align-items: center; gap: 8px; flex: none; color: var(--ink-faint);
-    font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
-  }
-  .speed input { width: 90px; accent-color: var(--internal); cursor: pointer; }
-
-  /* ---------- insight panel ---------- */
-  #insight {
-    position: fixed; top: 0; right: 0; height: 100dvh; width: min(400px, 100vw); z-index: 20;
-    background: var(--panel); border-left: 1px solid var(--line);
-    box-shadow: -24px 0 60px -30px rgba(0,0,0,.8);
-    transform: translateX(102%); transition: transform .3s cubic-bezier(.22,1,.36,1);
-    display: flex; flex-direction: column; padding: 24px 22px 26px; gap: 16px;
-  }
-  #insight.open { transform: translateX(0); }
-  #insight .close {
-    position: absolute; top: 14px; right: 16px; cursor: pointer; color: var(--ink-dim);
-    font-size: 24px; line-height: 1; border: none; background: none; padding: 4px;
-  }
-  #insight .close:hover { color: var(--ink); }
-  .i-src {
-    display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono);
-    font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600;
-  }
-  .i-src .dot { width: 8px; height: 8px; border-radius: 50%; }
-  .i-title { font-size: 19px; font-weight: 600; line-height: 1.3; letter-spacing: -.01em; }
-  .i-meta {
-    display: flex; gap: 14px; flex-wrap: wrap; font-family: var(--mono); font-size: 11px;
-    color: var(--ink-faint); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
-    padding: 12px 0;
-  }
-  .i-meta .lab { display: block; color: var(--ink-faint); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 4px; }
-  .i-meta .val { color: var(--ink); font-size: 13px; font-weight: 600; }
-  .i-body { font-size: 14px; line-height: 1.6; color: #c2c9d4; overflow: auto; padding-right: 4px; }
-  .i-body p { margin: 0 0 12px; }
-  .i-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-  .i-tag {
-    font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim); border: 1px solid var(--line);
-    padding: 4px 9px; border-radius: 6px; background: var(--panel2);
-  }
-  .i-conf { margin-top: auto; }
-  .i-conf .head {
-    display: flex; justify-content: space-between; font-family: var(--mono);
-    font-size: 10.5px; color: var(--ink-faint); letter-spacing: .08em; text-transform: uppercase;
-  }
-  .i-conf .bar { height: 5px; border-radius: 4px; background: var(--panel2); overflow: hidden; margin-top: 7px; }
-  .i-conf .fill { height: 100%; border-radius: 4px; transition: width .5s; }
-
-  /* ---------- responsive ---------- */
-  @media (max-width: 720px) {
-    #app { padding: max(14px, env(safe-area-inset-top)) 14px 14px; gap: 10px; }
-    header { flex-direction: column; gap: 12px; }
-    h1 { font-size: 19px; }
-    .legend { align-items: flex-start; width: 100%; flex-direction: row;
-      justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-    .chips { justify-content: flex-start; }
-    .stats { gap: 16px; }
-    .stat { text-align: left; }
-    .status-line { max-width: 100%; }
-    #query { max-width: 78vw; }
-    .scrub-wrap { gap: 10px; }
-    .minimap { order: 3; flex-basis: 100%; }
-    .speed { display: none; }            /* speed control is desktop-only; pace is fine on mobile */
-    .hint { font-size: 9.5px; }
-  }
-  @media (max-width: 380px) {
-    .stat .v { font-size: 15px; }
-    .chip { padding: 5px 9px; font-size: 11.5px; }
+  @media (max-width: 600px) {
+    :root { --dock-h: 104px; }
+    .brand h1 { font-size: 14px; }
+    .thesis .stmt { font-size: 17px; }
+    .insight h3 { font-size: 15px; }
+    main { padding: 16px 13px 8px; }
+    .dock-legend span span { display: none; }   /* dot-only legend on phones */
   }
 </style>
 </head>
 <body>
-<div id="app">
   <header>
-    <div class="title-wrap">
-      <div class="eyebrow"><span class="live-dot"></span> Agent Research · Live Feed</div>
-      <h1>Agent: <span class="topic">Quantum</span></h1>
-      <div class="status-line">
-        <span class="spinner"></span>
-        <span id="query">Initializing research agent…</span>
-      </div>
+    <div class="brand">
+      <div class="eyebrow"><span class="live-dot"></span> Agentic Analyst · Brief</div>
+      <h1>Agent: <span class="topic">Quantum Computing</span></h1>
     </div>
-    <div class="legend">
-      <div class="chips">
-        <div class="chip" data-k="research"><span class="dot"></span> Research <span class="n" id="n-research">0</span></div>
-        <div class="chip" data-k="news"><span class="dot"></span> News <span class="n" id="n-news">0</span></div>
-        <div class="chip" data-k="internal"><span class="dot"></span> Internal · Fidelity <span class="n" id="n-internal">0</span></div>
-      </div>
-      <div class="stats">
-        <div class="stat"><div class="v" id="stat-sources">0</div><div class="l">Sources scanned</div></div>
-        <div class="stat"><div class="v" id="stat-insights">0</div><div class="l">Insights found</div></div>
-      </div>
+    <div class="conviction">
+      <div class="v" id="hero-conf">81%</div>
+      <div class="l">Thesis conviction</div>
     </div>
   </header>
 
-  <div class="stage">
-    <canvas id="graph"></canvas>
-    <div class="paused-badge" id="paused">⏸ Reviewing history — tap Live to resume</div>
-    <div class="hint">Drag to scrub · tap a node to open the insight</div>
-    <div id="tooltip"></div>
+  <main>
+    <div class="sec-label">The call</div>
+    <section class="thesis" id="thesis">
+      <div class="tag">Investment thesis</div>
+      <p class="stmt" id="thesis-stmt"></p>
+      <div class="meta">
+        <span>As of <span class="val">Jul 2025</span></span>
+        <span>Synthesized from <span class="val" id="thesis-srcn">0</span> sources</span>
+        <span><span class="val" id="thesis-insn">0</span> supporting insights</span>
+      </div>
+      <button class="walk" id="walk"><span>▶</span> Walk me through the analysis</button>
+    </section>
+
+    <div class="sec-label">Key insights · ranked by conviction</div>
+    <section id="insights"></section>
+
+    <div class="sec-label">Evidence ledger · what the agent read</div>
+    <section id="evidence"></section>
+  </main>
+
+  <div id="narrator">
+    <span class="step" id="narr-step">Step</span>
+    <span class="txt" id="narr-txt"></span>
+    <button class="stop" id="narr-stop">Stop</button>
   </div>
 
-  <div class="scrub-wrap">
-    <div class="controls">
-      <button class="ctl" id="btn-play">⏸ Pause</button>
-      <button class="ctl live" id="btn-live"><span class="live-dot"></span> Live</button>
+  <div id="dock">
+    <div class="dock-head">
+      <span id="dock-status"><span class="live-dot"></span> Researching… <b id="dock-srcn">0</b> sources scanned · <b id="dock-insn">0</b> insights</span>
+      <span class="dock-legend">
+        <span data-k="research"><i style="background:var(--research)"></i><span>Research</span></span>
+        <span data-k="news"><i style="background:var(--news)"></i><span>News</span></span>
+        <span data-k="internal"><i style="background:var(--internal)"></i><span>Internal</span></span>
+      </span>
     </div>
-    <div class="minimap"><canvas id="mini"></canvas></div>
-    <div class="speed">
-      Speed
-      <input type="range" id="speed" min="0.25" max="4" step="0.25" value="1" />
-    </div>
+    <canvas id="spark"></canvas>
   </div>
-</div>
-
-<aside id="insight">
-  <button class="close" id="i-close">×</button>
-  <div class="i-src" id="i-src"><span class="dot"></span> <span id="i-src-label"></span></div>
-  <div class="i-title" id="i-title"></div>
-  <div class="i-meta">
-    <div><span class="lab">Detected</span><span class="val" id="i-date"></span></div>
-    <div><span class="lab">Signal</span><span class="val" id="i-signal"></span></div>
-    <div><span class="lab">Source</span><span class="val" id="i-origin"></span></div>
-  </div>
-  <div class="i-body" id="i-body"></div>
-  <div class="i-tags" id="i-tags"></div>
-  <div class="i-conf">
-    <div class="head"><span>Agent confidence</span><span id="i-conf-val"></span></div>
-    <div class="bar"><div class="fill" id="i-conf-fill"></div></div>
-  </div>
-</aside>
 
 <script>
 "use strict";
 
 // ----------------------------------------------------------------------------
-//  Config & series definition
+//  Synthetic content — agentic analyst brief (demo only, nothing real)
 // ----------------------------------------------------------------------------
-const COLORS = {
-  research: { line:"#ef6b6b", glow:"rgba(239,107,107,", label:"Research"            },
-  news:     { line:"#7fd1a1", glow:"rgba(127,209,161,", label:"News"                },
-  internal: { line:"#9eccff", glow:"rgba(158,204,255,", label:"Internal · Fidelity" },
-};
-const KEYS = ["research", "news", "internal"];
-
-// Each series oscillates with its own layered-sine signature so the lines
-// weave naturally. Pure mock data — no real sourcing.
-const WAVE = {
-  research: { base:0.50, amp:0.30, f1:0.045, f2:0.017, f3:0.009, ph:0.0,  drift:0.0008 },
-  news:     { base:0.48, amp:0.33, f1:0.060, f2:0.023, f3:0.013, ph:2.1,  drift:0.0011 },
-  internal: { base:0.52, amp:0.27, f1:0.034, f2:0.029, f3:0.007, ph:4.3,  drift:0.0006 },
+const STREAM = {
+  research: { c:"#ef6b6b", label:"Research" },
+  news:     { c:"#7fd1a1", label:"News" },
+  internal: { c:"#9eccff", label:"Internal · Fidelity" },
 };
 
-const SAMPLE_MS   = 90;      // base wall-clock time between samples (scaled by speed)
-let   WINDOW      = 200;     // samples visible across the graph width (responsive)
-const MAX_SAMPLES = 6000;    // rolling history buffer
-const START_DATE  = new Date("2025-07-01T09:00:00");
-const MS_PER_SAMPLE = 32 * 60 * 1000; // each sample == 32 sim-minutes of "research time"
-const INSIGHT_CHANCE = 0.05; // per new sample
-
-// ----------------------------------------------------------------------------
-//  Fabricated insight content (synthetic — for demo only)
-// ----------------------------------------------------------------------------
-const INSIGHTS = {
-  research: [
-    { title:"Logical qubit error rate drops below 10⁻⁵ in surface-code lattice",
-      origin:"arXiv:2507.10241 · Quantum Information",
-      body:["A 72-qubit surface-code demonstration sustained a logical error rate of 8.3×10⁻⁶ across 1.2M cycles — the first sub-threshold result reproduced outside a single lab.",
-            "The authors attribute the gain to a real-time decoder running on FPGA, cutting feedback latency to 440 ns. This is the metric institutional desks have been waiting on before modeling fault-tolerant timelines."],
-      tags:["fault-tolerance","surface code","error correction"], conf:0.91 },
-    { title:"Photonic interconnect links two dilution fridges at 4.1 km",
-      origin:"Nature Photonics · preprint",
-      body:["A telecom-band photonic link entangled superconducting qubits housed in separate cryostats over deployed fiber, hinting at a modular path past single-chip scaling limits.",
-            "Fidelity of the distributed Bell pair held at 0.86 — below threshold for compute, but a strong signal for networked architectures."],
-      tags:["networking","photonics","modular"], conf:0.78 },
-    { title:"Variational solver beats classical baseline on lattice-protein folding",
-      origin:"arXiv:2507.08810 · Quantum ML",
-      body:["A 40-qubit variational circuit found lower-energy folds than the best classical heuristic on a curated benchmark, though only after heavy error mitigation.",
-            "Reviewers flag that the classical baseline was not state-of-the-art — a recurring caveat in 'quantum advantage' claims worth tracking."],
-      tags:["VQE","quantum advantage","drug discovery"], conf:0.64 },
-    { title:"Topological qubit coherence time crosses 1 ms milestone",
-      origin:"arXiv:2507.13002 · Condensed Matter",
-      body:["Majorana-based device reportedly held coherence past 1 ms — an order of magnitude over prior topological attempts.",
-            "Independent replication is still pending; the field has been burned by topological claims before, so the agent is weighting this cautiously."],
-      tags:["topological","Majorana","coherence"], conf:0.55 },
-  ],
-  news: [
-    { title:"Major cloud provider opens 1,000-qubit machine to general availability",
-      origin:"Reuters · Technology",
-      body:["The provider moved its 1,000-qubit processor from private preview to GA, with usage-based pricing aimed at enterprise R&D teams.",
-            "Analysts read the pricing as a land-grab: margins are thin, but lock-in on the developer toolchain is the real prize."],
-      tags:["cloud","commercialization","GA launch"], conf:0.83 },
-    { title:"National lab consortium announces $1.8B fault-tolerance initiative",
-      origin:"Bloomberg",
-      body:["A multi-agency program will fund fault-tolerant hardware over five years, with explicit milestones tied to logical-qubit counts.",
-            "Public funding at this scale tends to pull forward private capital — historically a leading indicator for the sector's hiring cycle."],
-      tags:["policy","funding","fault-tolerance"], conf:0.74 },
-    { title:"Quantum-safe encryption mandate added to financial-sector guidance",
-      origin:"Financial Times",
-      body:["Regulators issued draft guidance recommending post-quantum cryptography migration plans from large institutions by 2027.",
-            "This reframes quantum from an upside bet into a compliance line item — a different, and arguably more durable, demand driver."],
-      tags:["PQC","regulation","security"], conf:0.88 },
-    { title:"Startup claims room-temperature qubit; experts urge caution",
-      origin:"TechCrunch",
-      body:["A well-funded startup demonstrated a qubit operating without dilution cooling, sparking a wave of coverage.",
-            "Several physicists noted the demo lacked gate-fidelity numbers — the agent is flagging high media signal but low verified substance."],
-      tags:["room-temp","hype-watch","hardware"], conf:0.41 },
-  ],
-  internal: [
-    { title:"Fidelity desk: portfolio exposure to quantum hardware names up 14% QoQ",
-      origin:"Internal · Sector Coverage Memo",
-      body:["The thematic basket tracking quantum hardware and enabling supply chain (cryogenics, control electronics, photonics) widened on the back of the cloud-GA news cycle.",
-            "Coverage analyst notes crowding risk: three names now account for 61% of the basket's beta."],
-      tags:["positioning","thematic basket","exposure"], conf:0.79 },
-    { title:"Fidelity research: re-rating cryogenics supplier on multi-year backlog",
-      origin:"Internal · Single-Name Note",
-      body:["A dilution-refrigerator supplier guided to a backlog stretching 7 quarters, driven by national-lab and hyperscaler orders.",
-            "Internal model moves the name from Hold to Add; key risk is concentration in two government buyers."],
-      tags:["supply chain","cryogenics","re-rating"], conf:0.72 },
-    { title:"Fidelity flow: net institutional inflows into quantum-adjacent ETFs accelerate",
-      origin:"Internal · Flows Dashboard",
-      body:["Aggregated flow data shows three consecutive weeks of net inflows into quantum-themed ETFs, the longest streak since launch.",
-            "The agent cross-references this with the FT regulatory story — compliance-driven demand may be leaking into thematic products."],
-      tags:["fund flows","ETF","sentiment"], conf:0.68 },
-    { title:"Fidelity desk: expert-network call flags 18-month gap to useful FTQC",
-      origin:"Internal · Expert Call Summary",
-      body:["A former hardware lead on an expert-network call put commercially useful fault-tolerant compute 18–30 months out — tighter than the desk's prior 36-month base case.",
-            "Treated as a single data point, but it nudges the internal timeline distribution earlier."],
-      tags:["expert network","timeline","FTQC"], conf:0.60 },
-  ],
+const THESIS = {
+  conf: 0.81,
+  stmt: `Quantum is being <b>repriced in plain sight</b>: regulation is quietly turning it from a moonshot into a <b>compliance mandate</b>, while the hardest engineering — and the most durable margin — concentrates <b>upstream in the cryogenics & photonics supply chain</b>, not the headline chipmakers. The asymmetric position sits upstream, sized for an <b>18–30 month</b> fault-tolerance timeline and hedged against a hype-driven sentiment unwind.`,
 };
 
-// rotating search-query ticker (purely cosmetic, conveys constant research)
-const QUERIES = [
-  ["research","arXiv","topological qubit coherence time 2025"],
-  ["news","Reuters","quantum computing commercialization roadmap"],
-  ["internal","Fidelity feed","quantum hardware supply chain exposure"],
-  ["research","arXiv","surface code logical error rate sub-threshold"],
-  ["news","Bloomberg","national fault-tolerance funding initiative"],
-  ["internal","Fidelity feed","cryogenics supplier backlog re-rating"],
-  ["research","Nature","photonic interconnect distributed entanglement"],
-  ["news","Financial Times","post-quantum cryptography mandate finance"],
-  ["internal","Fidelity feed","quantum ETF institutional fund flows"],
-  ["research","arXiv","variational quantum eigensolver protein folding"],
-  ["news","TechCrunch","room temperature qubit claim verification"],
-  ["internal","Fidelity feed","expert network call FTQC timeline"],
+// Evidence ledger — each is a source the agent "read"; ** ** marks the key phrase.
+const SOURCES = [
+  { key:"news",     origin:"Financial Times",            quote:`Regulators issued draft guidance recommending **post-quantum cryptography migration plans** from large institutions by **2027**, reframing quantum from an upside bet into a compliance line item.` },
+  { key:"internal", origin:"Internal · Flows Dashboard",  quote:`Aggregated flow data shows **three consecutive weeks** of net inflows into quantum-themed ETFs — the **longest streak since launch** — and it tracks the regulatory news cycle, not hardware milestones.` },
+  { key:"internal", origin:"Internal · Single-Name Note", quote:`A dilution-refrigerator supplier guided to a backlog stretching **7 quarters**, driven by national-lab and hyperscaler orders. Internal model moves the name from **Hold to Add**.` },
+  { key:"news",     origin:"Bloomberg",                   quote:`A multi-agency program will fund fault-tolerant hardware with a **$1.8B** commitment, with milestones tied to logical-qubit counts — public capital that historically pulls private capital forward.` },
+  { key:"research", origin:"Nature Photonics · preprint", quote:`A telecom-band photonic link entangled qubits in **separate cryostats over deployed fiber** — a modular path past single-chip scaling limits, and a tell on where the hard engineering lives.` },
+  { key:"research", origin:"arXiv:2507.10241",            quote:`A 72-qubit surface-code run sustained a logical error rate of **8.3×10⁻⁶** — the **first sub-threshold result reproduced outside a single lab**, the metric desks were waiting on.` },
+  { key:"internal", origin:"Internal · Expert Call",      quote:`A former hardware lead put commercially useful fault-tolerant compute **18–30 months** out — materially tighter than the desk's prior **36-month** base case.` },
+  { key:"news",     origin:"TechCrunch",                  quote:`A startup demonstrated a qubit operating **without dilution cooling**, sparking heavy coverage — but the demo **lacked gate-fidelity numbers**, a classic substance gap.` },
+  { key:"research", origin:"arXiv:2507.13002",            quote:`A Majorana device reportedly held coherence past **1 ms**, an order of magnitude over prior attempts — but **independent replication is still pending**.` },
+  { key:"news",     origin:"Reuters",                     quote:`A major cloud provider moved its **1,000-qubit** processor to general availability; analysts read thin margins but real **developer-toolchain lock-in** as the prize.` },
 ];
 
-// ----------------------------------------------------------------------------
-//  State
-// ----------------------------------------------------------------------------
-const data = [];           // [{value:{research,news,internal}}]
-const nodes = [];          // insight nodes {idx, key, value, insight}
-let viewRight = 0;         // index of right-most visible sample
-let live = true;
-let playing = true;
-let speed = 1;
-let visible = { research:true, news:true, internal:true };
-let counts = { research:0, news:0, internal:0 };
-let insightCount = 0;
-let nodeScreen = [];       // current frame's node screen positions for hit-testing
-let hoverNode = null;
-let selectedNode = null;
-let queryIdx = 0;
-let phase = 0;             // simulation sample counter (continuous)
+// Insights — ordered by conviction; each cites SOURCES by index.
+const INSIGHTS = [
+  { h:"Regulation is converting quantum into a mandatory compliance spend.",
+    body:"The demand driver is shifting from speculative upside to obligation. That is a more durable — and more forecastable — revenue base than the moonshot narrative the market is still pricing.",
+    conf:0.88, sources:[0,1],
+    flag:{ kind:"flag", label:"High conviction" } },
+  { h:"Fault-tolerance timelines just compressed — the desk's base case is stale.",
+    body:"A reproduced sub-threshold error rate plus an expert-network data point pull the useful-FTQC window inside three years. The internal 36-month base case needs re-cutting earlier.",
+    conf:0.84, sources:[5,6],
+    flag:{ kind:"flag", label:"Timeline shift" } },
+  { h:"The margin is migrating to the supply chain, not the chipmakers.",
+    body:"Cryogenics and photonics are the binding constraint, and backlogs there are already multi-quarter. The asymmetric, less-crowded exposure is upstream of the names in the headlines.",
+    conf:0.79, sources:[2,3,4] },
+  { h:"Sentiment is running ahead of substance — keep a hype hedge on.",
+    body:"Room-temperature claims and unreplicated coherence records are inflating coverage without verified fidelity. High media signal, low confirmed substance — a classic setup for a sentiment unwind.",
+    conf:0.53, sources:[7,8,9],
+    flag:{ kind:"risk", label:"Contrarian · risk" } },
+];
 
-// ----------------------------------------------------------------------------
-//  Canvas setup
-// ----------------------------------------------------------------------------
-const graph = document.getElementById("graph");
-const gctx  = graph.getContext("2d");
-const mini  = document.getElementById("mini");
-const mctx  = mini.getContext("2d");
-let G = { w:0, h:0, padT:30, padB:28, padL:14, padR:14 };
-let M = { w:0, h:0 };
-
-function fit() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  for (const [cv, ctx, box] of [[graph, gctx, G], [mini, mctx, M]]) {
-    const r = cv.getBoundingClientRect();
-    cv.width = Math.max(1, r.width * dpr);
-    cv.height = Math.max(1, r.height * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    box.w = r.width; box.h = r.height;
-  }
-  // fewer visible samples on small screens so the lines stay readable
-  WINDOW = G.w < 520 ? 90 : (G.w < 900 ? 140 : 200);
-  if (live && data.length) viewRight = data.length - 1;
-  clampView();
+function confWord(c) {
+  return c >= 0.8 ? "High conviction" : c >= 0.65 ? "Constructive" : c >= 0.5 ? "Watch" : "Speculative";
 }
-window.addEventListener("resize", fit);
+function mark(s) { return s.replace(/\*\*(.+?)\*\*/g, "<mark>$1</mark>"); }
 
 // ----------------------------------------------------------------------------
-//  Data generation
+//  Build the DOM
 // ----------------------------------------------------------------------------
-function sampleAt(p) {
-  const v = {};
+document.getElementById("thesis-stmt").innerHTML = THESIS.stmt;
+document.getElementById("hero-conf").textContent = Math.round(THESIS.conf * 100) + "%";
+document.getElementById("thesis-srcn").textContent = SOURCES.length;
+document.getElementById("thesis-insn").textContent = INSIGHTS.length;
+
+const insWrap = document.getElementById("insights");
+INSIGHTS.forEach((ins, i) => {
+  const primary = STREAM[SOURCES[ins.sources[0]].key].c;
+  const el = document.createElement("article");
+  el.className = "insight" + (ins.flag && ins.flag.kind === "flag" ? " flagged" : "");
+  el.id = "ins-" + i;
+  el.style.setProperty("--accent", primary);
+  const streamsUsed = [...new Set(ins.sources.map(s => SOURCES[s].key))];
+  const dots = streamsUsed.map(k => `<span class="sd" style="background:${STREAM[k].c}"></span>`).join("");
+  const flagBadge = ins.flag
+    ? `<span class="badge ${ins.flag.kind === "risk" ? "risk" : "flag"}">${ins.flag.kind === "risk" ? "⚠" : "★"} ${ins.flag.label}</span>`
+    : "";
+  el.innerHTML = `
+    <div class="top">
+      <span class="badge">#${i + 1}</span>
+      ${flagBadge}
+      <span class="badge">${dots} ${ins.sources.length} sources</span>
+    </div>
+    <h3>${ins.h}</h3>
+    <p>${ins.body}</p>
+    <div class="foot">
+      <div class="conf">
+        <span class="word">${confWord(ins.conf)}</span>
+        <span class="bar"><span class="fill" style="width:${Math.round(ins.conf * 100)}%"></span></span>
+        <span class="pct">${Math.round(ins.conf * 100)}%</span>
+      </div>
+      <button class="trace" data-i="${i}">Trace evidence <span class="c">↓</span></button>
+    </div>`;
+  insWrap.appendChild(el);
+});
+
+const evWrap = document.getElementById("evidence");
+SOURCES.forEach((s, i) => {
+  const st = STREAM[s.key];
+  const supportedBy = INSIGHTS
+    .map((ins, k) => ins.sources.includes(i) ? k + 1 : null)
+    .filter(x => x !== null);
+  const el = document.createElement("article");
+  el.className = "evidence";
+  el.id = "src-" + i;
+  el.style.setProperty("--accent", st.c);
+  el.innerHTML = `
+    <div class="ehead">
+      <span class="sd"></span>
+      <span class="stream">${st.label}</span>
+      <span class="origin">${s.origin}</span>
+    </div>
+    <div class="quote">${mark(s.quote)}</div>
+    <div class="supports">↳ supports insight ${supportedBy.join(" & ")}</div>`;
+  evWrap.appendChild(el);
+});
+
+// ----------------------------------------------------------------------------
+//  Trace: highlight an insight's supporting evidence + scroll to it
+// ----------------------------------------------------------------------------
+let activeStreams = null;   // null = all visible in dock
+function clearActive() {
+  document.querySelectorAll(".insight.active").forEach(e => e.classList.remove("active"));
+  document.querySelectorAll(".evidence").forEach(e => e.classList.remove("active", "dim", "flash"));
+  activeStreams = null;
+  syncLegend();
+}
+function trace(i, scroll = true) {
+  clearActive();
+  const ins = INSIGHTS[i];
+  document.getElementById("ins-" + i).classList.add("active");
+  activeStreams = new Set(ins.sources.map(s => SOURCES[s].key));
+  syncLegend();
+  document.querySelectorAll(".evidence").forEach(e => e.classList.add("dim"));
+  ins.sources.forEach((si, k) => {
+    const card = document.getElementById("src-" + si);
+    card.classList.remove("dim");
+    card.classList.add("active");
+    setTimeout(() => { card.classList.add("flash"); }, 60 + k * 130);
+    setTimeout(() => { card.classList.remove("flash"); }, 60 + k * 130 + 900);
+  });
+  if (scroll) {
+    document.getElementById("src-" + ins.sources[0]).scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+document.querySelectorAll(".trace").forEach(b => {
+  b.onclick = () => { stopTour(); trace(parseInt(b.dataset.i, 10)); };
+});
+
+function syncLegend() {
+  document.querySelectorAll(".dock-legend span[data-k]").forEach(s => {
+    const on = !activeStreams || activeStreams.has(s.dataset.k);
+    s.classList.toggle("off", !on);
+  });
+}
+
+// ----------------------------------------------------------------------------
+//  Guided tour — the "tell me a story" walk-through
+// ----------------------------------------------------------------------------
+const narrator = document.getElementById("narrator");
+const narrStep = document.getElementById("narr-step");
+const narrTxt  = document.getElementById("narr-txt");
+const walkBtn  = document.getElementById("walk");
+let tourOn = false;
+let tourToken = 0;
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+function setNarr(step, txt) { narrStep.textContent = step; narrTxt.innerHTML = txt; }
+
+function startTour() {
+  if (tourOn) { stopTour(); return; }
+  tourOn = true;
+  const myToken = ++tourToken;
+  walkBtn.classList.add("running");
+  walkBtn.innerHTML = "<span>■</span> Stop walkthrough";
+  narrator.classList.add("show");
+  runTour(myToken);
+}
+function stopTour() {
+  tourOn = false; tourToken++;
+  walkBtn.classList.remove("running");
+  walkBtn.innerHTML = "<span>▶</span> Walk me through the analysis";
+  narrator.classList.remove("show");
+  clearActive();
+}
+async function step(token, ms) { await sleep(ms); return tourOn && token === tourToken; }
+
+async function runTour(token) {
+  clearActive();
+  document.getElementById("thesis").scrollIntoView({ behavior: "smooth", block: "start" });
+  setNarr("The call", "Here's the thesis. Let me show you the insights behind it — strongest conviction first.");
+  if (!await step(token, 3200)) return;
+
+  for (let i = 0; i < INSIGHTS.length; i++) {
+    const ins = INSIGHTS[i];
+    document.getElementById("ins-" + i).classList.add("active");
+    document.getElementById("ins-" + i).scrollIntoView({ behavior: "smooth", block: "center" });
+    const flag = ins.flag ? ` <b style="color:var(--flag)">[${ins.flag.label}]</b>` : "";
+    setNarr(`Insight ${i + 1} / ${INSIGHTS.length}`,
+            `${ins.h}${flag} — conviction ${Math.round(ins.conf * 100)}%.`);
+    if (!await step(token, 2600)) return;
+
+    setNarr(`Evidence ${i + 1}`,
+            `Tracing this to ${ins.sources.length} source${ins.sources.length > 1 ? "s" : ""} the agent read…`);
+    trace(i);
+    if (!await step(token, 3400)) return;
+  }
+
+  clearActive();
+  document.getElementById("thesis").scrollIntoView({ behavior: "smooth", block: "start" });
+  setNarr("Conclusion",
+          `Four insights, two flagged, all traced to source — net <b>${Math.round(THESIS.conf * 100)}% conviction</b>. That's the call.`);
+  if (!await step(token, 4200)) return;
+  stopTour();
+}
+
+walkBtn.onclick = startTour;
+document.getElementById("narr-stop").onclick = stopTour;
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { stopTour(); clearActive(); }
+  if (e.key === " " && e.target === document.body) { e.preventDefault(); startTour(); }
+});
+
+// ----------------------------------------------------------------------------
+//  Bottom dock — ambient "still researching" sparkline
+// ----------------------------------------------------------------------------
+const spark = document.getElementById("spark");
+const sctx = spark.getContext("2d");
+const KEYS = ["research", "news", "internal"];
+const WAVE = {
+  research: { base:0.50, amp:0.30, f1:0.045, f2:0.017, ph:0.0 },
+  news:     { base:0.48, amp:0.33, f1:0.060, f2:0.023, ph:2.1 },
+  internal: { base:0.52, amp:0.27, f1:0.034, f2:0.029, ph:4.3 },
+};
+const series = { research:[], news:[], internal:[] };
+const marks = [];                 // {col, key} ambient insight ticks
+let SW = 0, SH = 0, COLS = 160, phase = 0;
+let srcCount = 1240, insCount = INSIGHTS.length;
+
+function fitSpark() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const r = spark.getBoundingClientRect();
+  spark.width = Math.max(1, r.width * dpr);
+  spark.height = Math.max(1, r.height * dpr);
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  SW = r.width; SH = r.height;
+  COLS = SW < 520 ? 110 : 180;
+}
+window.addEventListener("resize", fitSpark);
+
+function tick() {
   for (const k of KEYS) {
     const w = WAVE[k];
-    let s = w.base
-      + w.amp * Math.sin(p * w.f1 + w.ph)
-      + w.amp * 0.45 * Math.sin(p * w.f2 + w.ph * 1.7)
-      + w.amp * 0.30 * Math.sin(p * w.f3 + w.ph * 0.6);
-    s += Math.sin(p * w.drift) * 0.06;
-    v[k] = Math.max(0.04, Math.min(0.96, s));
+    let v = w.base + w.amp * Math.sin(phase * w.f1 + w.ph) + w.amp * 0.45 * Math.sin(phase * w.f2 + w.ph * 1.7);
+    v = Math.max(0.05, Math.min(0.95, v));
+    series[k].push(v);
+    if (series[k].length > COLS + 5) series[k].shift();
   }
-  return v;
+  if (Math.random() < 0.03) { marks.push({ col: series.research.length - 1, key: KEYS[(Math.random() * 3) | 0] }); insCount++; }
+  for (const m of marks) m.col--;
+  while (marks.length && marks[0].col < 0) marks.shift();
+  phase++;
+  srcCount += (Math.random() < 0.6 ? 2 : 3);
 }
 
-function pushSample() {
-  const value = sampleAt(phase);
-  data.push({ value });
-  phase += 1;
-  for (const k of KEYS) counts[k] += (Math.random() < 0.7 ? 1 : 2); // sources "scanned"
-
-  if (Math.random() < INSIGHT_CHANCE) {
-    const candidates = KEYS.filter(k => visible[k]);
-    const key = candidates[(Math.random() * candidates.length) | 0] || "research";
-    const pool = INSIGHTS[key];
-    const insight = pool[(Math.random() * pool.length) | 0];
-    nodes.push({ idx: data.length - 1, key, value: value[key], insight });
-    insightCount++;
-  }
-
-  if (data.length > MAX_SAMPLES) {
-    const drop = data.length - MAX_SAMPLES;
-    data.splice(0, drop);
-    for (const n of nodes) n.idx -= drop;
-    while (nodes.length && nodes[0].idx < 0) nodes.shift();
-    viewRight -= drop;
-  }
-  if (live) viewRight = data.length - 1;
-}
-
-function seed(n) {
-  for (let i = 0; i < n; i++) pushSample();
-  viewRight = data.length - 1;
-}
-
-// ----------------------------------------------------------------------------
-//  Coordinate helpers
-// ----------------------------------------------------------------------------
-function xForCol(col) {
-  const usable = G.w - G.padL - G.padR;
-  return G.padL + (col / (WINDOW - 1)) * usable;
-}
-function yForVal(val) {
-  const usable = G.h - G.padT - G.padB;
-  return G.padT + (1 - val) * usable;
-}
-function fmtDate(idx) {
-  const d = new Date(START_DATE.getTime() + idx * MS_PER_SAMPLE);
-  return d.toLocaleDateString("en-US", { month:"short", day:"numeric" });
-}
-function fmtDateTime(idx) {
-  const d = new Date(START_DATE.getTime() + idx * MS_PER_SAMPLE);
-  return d.toLocaleDateString("en-US", { month:"short", day:"numeric" }) + ", " +
-         d.toLocaleTimeString("en-US", { hour:"numeric", minute:"2-digit" });
-}
-
-// ----------------------------------------------------------------------------
-//  Rendering
-// ----------------------------------------------------------------------------
-function drawGrid() {
-  gctx.clearRect(0, 0, G.w, G.h);
-  gctx.strokeStyle = "rgba(120,140,170,0.05)";
-  gctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = G.padT + (i / 4) * (G.h - G.padT - G.padB);
-    gctx.beginPath(); gctx.moveTo(G.padL, y); gctx.lineTo(G.w - G.padR, y); gctx.stroke();
-  }
-  const left = viewRight - (WINDOW - 1);
-  gctx.fillStyle = "rgba(120,135,160,0.55)";
-  gctx.font = "10px " + getComputedStyle(document.body).getPropertyValue("--mono");
-  gctx.textAlign = "center";
-  const step = Math.max(1, Math.floor(WINDOW / 5));
-  for (let col = 0; col < WINDOW; col += step) {
-    const idx = left + col;
-    if (idx < 0) continue;
-    const x = xForCol(col);
-    gctx.strokeStyle = "rgba(120,140,170,0.06)";
-    gctx.beginPath(); gctx.moveTo(x, G.padT); gctx.lineTo(x, G.h - G.padB); gctx.stroke();
-    gctx.fillText(fmtDate(idx), x, G.h - 10);
-  }
-}
-
-function drawSeries(key, leadX) {
-  if (!visible[key]) return;
-  const left = viewRight - (WINDOW - 1);
-  const col0 = Math.max(0, -left);
-  const c = COLORS[key];
-
-  gctx.save();
-  gctx.lineJoin = "round"; gctx.lineCap = "round";
-
-  // subtle soft underlay for legibility on dark bg (no heavy neon)
-  gctx.strokeStyle = c.glow + "0.5)";
-  gctx.shadowColor = c.glow + "0.5)";
-  gctx.shadowBlur = 5;
-  gctx.lineWidth = 2;
-  gctx.beginPath();
-  let started = false;
-  for (let col = col0; col < WINDOW; col++) {
-    const idx = left + col;
-    if (idx > viewRight || idx >= data.length) break;
-    const x = xForCol(col), y = yForVal(data[idx].value[key]);
-    if (!started) { gctx.moveTo(x, y); started = true; } else gctx.lineTo(x, y);
-  }
-  gctx.stroke();
-
-  // crisp core line
-  gctx.shadowBlur = 0;
-  gctx.strokeStyle = c.line;
-  gctx.lineWidth = 1.5;
-  gctx.stroke();
-
-  // leading head marker at the live edge
-  if (viewRight === data.length - 1 && data.length) {
-    const y = yForVal(data[viewRight].value[key]);
-    gctx.fillStyle = c.line;
-    gctx.beginPath(); gctx.arc(leadX, y, 2.8, 0, Math.PI * 2); gctx.fill();
-  }
-  gctx.restore();
-}
-
-function drawNodes() {
-  nodeScreen = [];
-  const left = viewRight - (WINDOW - 1);
-  const t = performance.now() / 1000;
-  for (const n of nodes) {
-    if (!visible[n.key]) continue;
-    const col = n.idx - left;
-    if (col < 0 || col > WINDOW - 1 || n.idx >= data.length) continue;
-    const x = xForCol(col), y = yForVal(data[n.idx].value[n.key]);
-    const c = COLORS[n.key];
-    const isSel = selectedNode === n;
-    const isHov = hoverNode === n;
-    const pulse = 0.5 + 0.5 * Math.sin(t * 2.2 + n.idx);
-
-    gctx.save();
-    gctx.strokeStyle = c.glow + (0.2 + 0.18 * pulse) + ")";
-    gctx.lineWidth = 1.2;
-    gctx.beginPath(); gctx.arc(x, y, 8 + pulse * 3 + (isHov ? 2 : 0), 0, Math.PI * 2); gctx.stroke();
-    gctx.shadowColor = c.glow + "0.7)"; gctx.shadowBlur = isHov || isSel ? 8 : 4;
-    gctx.fillStyle = c.line;
-    gctx.beginPath(); gctx.arc(x, y, isSel ? 6 : (isHov ? 5.5 : 4.5), 0, Math.PI * 2); gctx.fill();
-    gctx.shadowBlur = 0; gctx.fillStyle = "rgba(255,255,255,0.92)";
-    gctx.beginPath(); gctx.arc(x, y, 1.6, 0, Math.PI * 2); gctx.fill();
-    if (isSel) {
-      gctx.strokeStyle = "rgba(255,255,255,0.8)"; gctx.lineWidth = 1.4;
-      gctx.beginPath(); gctx.arc(x, y, 10, 0, Math.PI * 2); gctx.stroke();
-    }
-    gctx.restore();
-
-    nodeScreen.push({ x, y, n });
-  }
-}
-
-function drawScanline(leadX) {
-  if (viewRight !== data.length - 1) return;
-  const grad = gctx.createLinearGradient(leadX - 50, 0, leadX, 0);
-  grad.addColorStop(0, "rgba(150,170,210,0)");
-  grad.addColorStop(1, "rgba(150,170,210,0.07)");
-  gctx.fillStyle = grad;
-  gctx.fillRect(leadX - 50, G.padT, 50, G.h - G.padT - G.padB);
-  gctx.strokeStyle = "rgba(170,190,225,0.28)";
-  gctx.lineWidth = 1;
-  gctx.beginPath(); gctx.moveTo(leadX, G.padT); gctx.lineTo(leadX, G.h - G.padB); gctx.stroke();
-}
-
-function renderGraph() {
-  drawGrid();
-  const left = viewRight - (WINDOW - 1);
-  const leadCol = viewRight - left;
-  const leadX = xForCol(leadCol);
-  drawScanline(leadX);
-  for (const k of KEYS) drawSeries(k, leadX);
-  drawNodes();
-}
-
-function renderMini() {
-  mctx.clearRect(0, 0, M.w, M.h);
-  if (data.length < 2) return;
-  const n = data.length;
+function drawSpark() {
+  sctx.clearRect(0, 0, SW, SH);
+  const n = series.research.length;
+  if (n < 2) return;
   const padY = 6;
+  const xFor = (i) => (i / (COLS - 1)) * SW;
+  const yFor = (v) => padY + (1 - v) * (SH - padY * 2);
   for (const k of KEYS) {
-    if (!visible[k]) continue;
-    const c = COLORS[k];
-    mctx.strokeStyle = c.glow + "0.5)";
-    mctx.lineWidth = 1;
-    mctx.beginPath();
-    const cols = Math.min(M.w, 600);
-    for (let i = 0; i <= cols; i++) {
-      const idx = Math.floor((i / cols) * (n - 1));
-      const x = (i / cols) * M.w;
-      const y = padY + (1 - data[idx].value[k]) * (M.h - padY * 2);
-      i === 0 ? mctx.moveTo(x, y) : mctx.lineTo(x, y);
+    const on = !activeStreams || activeStreams.has(k);
+    const c = STREAM[k].c;
+    sctx.save();
+    sctx.globalAlpha = on ? 1 : 0.18;
+    sctx.strokeStyle = c; sctx.lineWidth = 1.5; sctx.lineJoin = "round"; sctx.lineCap = "round";
+    if (on) { sctx.shadowColor = c; sctx.shadowBlur = 4; }
+    sctx.beginPath();
+    const off = Math.max(0, n - COLS);
+    for (let i = off; i < n; i++) {
+      const x = xFor(i - off), y = yFor(series[k][i]);
+      i === off ? sctx.moveTo(x, y) : sctx.lineTo(x, y);
     }
-    mctx.stroke();
+    sctx.stroke();
+    sctx.restore();
   }
-  for (const nd of nodes) {
-    if (!visible[nd.key]) continue;
-    const x = (nd.idx / (n - 1)) * M.w;
-    mctx.fillStyle = COLORS[nd.key].line;
-    mctx.fillRect(x - 0.6, 2, 1.4, 4);
+  // ambient insight ticks
+  for (const m of marks) {
+    if (m.col < 0 || m.col >= n) continue;
+    const on = !activeStreams || activeStreams.has(m.key);
+    sctx.globalAlpha = on ? 0.9 : 0.15;
+    sctx.fillStyle = STREAM[m.key].c;
+    sctx.beginPath(); sctx.arc(xFor(m.col), yFor(series[m.key][m.col]), 2.4, 0, Math.PI * 2); sctx.fill();
   }
-  const left = Math.max(0, viewRight - (WINDOW - 1));
-  const x0 = (left / (n - 1)) * M.w;
-  const x1 = (viewRight / (n - 1)) * M.w;
-  mctx.fillStyle = "rgba(150,170,210,0.1)";
-  mctx.fillRect(x0, 0, Math.max(6, x1 - x0), M.h);
-  mctx.strokeStyle = "rgba(170,190,225,0.5)";
-  mctx.lineWidth = 1.2;
-  mctx.strokeRect(x0 + 0.5, 0.5, Math.max(6, x1 - x0) - 1, M.h - 1);
+  sctx.globalAlpha = 1;
+  document.getElementById("dock-srcn").textContent = srcCount.toLocaleString();
+  document.getElementById("dock-insn").textContent = insCount;
 }
 
-// ----------------------------------------------------------------------------
-//  Animation loop
-// ----------------------------------------------------------------------------
-let acc = 0, lastT = performance.now();
+let acc = 0, last = performance.now();
 function loop(now) {
-  const dt = now - lastT; lastT = now;
-  if (playing) {
-    acc += dt * speed;
-    let guard = 0;
-    while (acc >= SAMPLE_MS && guard < 8) { pushSample(); acc -= SAMPLE_MS; guard++; }
-  }
-  renderGraph();
-  renderMini();
-  updateHud();
+  acc += now - last; last = now;
+  while (acc >= 95) { tick(); acc -= 95; }
+  drawSpark();
   requestAnimationFrame(loop);
 }
 
-// ----------------------------------------------------------------------------
-//  HUD: counters + query ticker
-// ----------------------------------------------------------------------------
-let lastQuerySwap = 0;
-function updateHud() {
-  document.getElementById("n-research").textContent = counts.research.toLocaleString();
-  document.getElementById("n-news").textContent     = counts.news.toLocaleString();
-  document.getElementById("n-internal").textContent = counts.internal.toLocaleString();
-  document.getElementById("stat-sources").textContent  =
-    (counts.research + counts.news + counts.internal).toLocaleString();
-  document.getElementById("stat-insights").textContent = insightCount;
-
-  const now = performance.now();
-  if (playing && now - lastQuerySwap > 2600) {
-    lastQuerySwap = now;
-    queryIdx = (queryIdx + 1) % QUERIES.length;
-    const [k, src, q] = QUERIES[queryIdx];
-    document.getElementById("query").innerHTML = `Searching <b>${src}</b> · "${q}"`;
-  }
-}
-
-// ----------------------------------------------------------------------------
-//  Interaction
-// ----------------------------------------------------------------------------
-function setLive(on) {
-  live = on;
-  document.getElementById("paused").classList.toggle("show", !on);
-  document.getElementById("btn-live").style.opacity = on ? "1" : ".6";
-  if (on) viewRight = data.length - 1;
-}
-function setPlaying(on) {
-  playing = on;
-  document.getElementById("btn-play").textContent = on ? "⏸ Pause" : "▶ Play";
-}
-
-document.getElementById("btn-live").onclick = () => { setLive(true); };
-document.getElementById("btn-play").onclick = () => { setPlaying(!playing); };
-document.getElementById("speed").oninput = (e) => { speed = parseFloat(e.target.value); };
-
-document.querySelectorAll(".chip").forEach(chip => {
-  chip.onclick = () => {
-    const k = chip.dataset.k;
-    visible[k] = !visible[k];
-    chip.classList.toggle("off", !visible[k]);
-  };
-});
-
-function clampView() {
-  viewRight = Math.max(WINDOW - 1, Math.min(data.length - 1, viewRight));
-}
-let dragging = false, dragStartX = 0, dragStartView = 0, didDrag = false;
-graph.addEventListener("pointerdown", (e) => {
-  dragging = true; didDrag = false;
-  dragStartX = e.clientX; dragStartView = viewRight;
-  graph.setPointerCapture(e.pointerId);
-});
-graph.addEventListener("pointermove", (e) => {
-  const rect = graph.getBoundingClientRect();
-  if (dragging) {
-    const dx = e.clientX - dragStartX;
-    if (Math.abs(dx) > 3) { didDrag = true; setLive(false); }
-    const colsPerPx = (WINDOW - 1) / (G.w - G.padL - G.padR);
-    viewRight = Math.round(dragStartView - dx * colsPerPx);
-    clampView();
-    if (viewRight >= data.length - 1) setLive(true);
-  } else {
-    hitTest(e.clientX - rect.left, e.clientY - rect.top);
-  }
-});
-graph.addEventListener("pointerup", (e) => {
-  dragging = false;
-  graph.releasePointerCapture(e.pointerId);
-  if (!didDrag) {
-    const rect = graph.getBoundingClientRect();
-    const hit = pick(e.clientX - rect.left, e.clientY - rect.top);
-    if (hit) openInsight(hit.n);
-  }
-});
-graph.addEventListener("pointerleave", () => hideTooltip());
-graph.addEventListener("wheel", (e) => {
-  e.preventDefault();
-  setLive(false);
-  const colsPerNotch = 6;
-  viewRight += Math.sign(e.deltaY) * colsPerNotch * (e.shiftKey ? 4 : 1);
-  clampView();
-  if (viewRight >= data.length - 1) setLive(true);
-}, { passive:false });
-
-function pick(mx, my) {
-  let best = null, bestD = 18 * 18;   // a touch more forgiving for touch targets
-  for (const s of nodeScreen) {
-    const d = (s.x - mx) ** 2 + (s.y - my) ** 2;
-    if (d < bestD) { bestD = d; best = s; }
-  }
-  return best;
-}
-
-const tooltip = document.getElementById("tooltip");
-function hitTest(mx, my) {
-  const hit = pick(mx, my);
-  hoverNode = hit ? hit.n : null;
-  graph.style.cursor = hit ? "pointer" : (dragging ? "grabbing" : "crosshair");
-  if (hit) showTooltip(hit, mx, my); else hideTooltip();
-}
-function showTooltip(hit, mx, my) {
-  const n = hit.n, c = COLORS[n.key];
-  tooltip.innerHTML =
-    `<div class="src" style="color:${c.line}">${c.label}</div>` +
-    `<div class="t">${n.insight.title}</div>` +
-    `<div class="meta">${fmtDateTime(n.idx)} · tap to expand</div>`;
-  tooltip.classList.add("show");
-  const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
-  let x = hit.x + 14, y = hit.y - th - 12;
-  if (x + tw > G.w) x = hit.x - tw - 14;
-  if (x < 4) x = 4;
-  if (y < 4) y = hit.y + 16;
-  tooltip.style.left = x + "px";
-  tooltip.style.top = y + "px";
-}
-function hideTooltip() { tooltip.classList.remove("show"); }
-
-let miniDragging = false;
-function miniSeek(clientX) {
-  const rect = mini.getBoundingClientRect();
-  const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-  setLive(false);
-  viewRight = Math.round(frac * (data.length - 1));
-  clampView();
-  if (viewRight >= data.length - 1) setLive(true);
-}
-mini.addEventListener("pointerdown", (e) => { miniDragging = true; miniSeek(e.clientX); mini.setPointerCapture(e.pointerId); });
-mini.addEventListener("pointermove", (e) => { if (miniDragging) miniSeek(e.clientX); });
-mini.addEventListener("pointerup",   (e) => { miniDragging = false; mini.releasePointerCapture(e.pointerId); });
-
-const panel = document.getElementById("insight");
-function openInsight(n) {
-  selectedNode = n;
-  const c = COLORS[n.key], ins = n.insight;
-  document.getElementById("i-src-label").textContent = c.label;
-  document.querySelector("#i-src .dot").style.background = c.line;
-  document.getElementById("i-src").style.color = c.line;
-  document.getElementById("i-title").textContent = ins.title;
-  document.getElementById("i-date").textContent = fmtDateTime(n.idx);
-  document.getElementById("i-signal").textContent = (n.value * 100).toFixed(0) + "%";
-  document.getElementById("i-origin").textContent = ins.origin.split(" · ")[0];
-  document.getElementById("i-body").innerHTML = ins.body.map(p => `<p>${p}</p>`).join("") +
-    `<p style="color:var(--ink-faint);font-size:12px">Origin: ${ins.origin}</p>`;
-  document.getElementById("i-tags").innerHTML = ins.tags.map(t => `<span class="i-tag">${t}</span>`).join("");
-  const conf = Math.round(ins.conf * 100);
-  document.getElementById("i-conf-val").textContent = conf + "%";
-  const fill = document.getElementById("i-conf-fill");
-  fill.style.width = conf + "%";
-  fill.style.background = c.line;
-  panel.classList.add("open");
-}
-document.getElementById("i-close").onclick = () => { panel.classList.remove("open"); selectedNode = null; };
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { panel.classList.remove("open"); selectedNode = null; }
-  if (e.key === " ")      { setPlaying(!playing); e.preventDefault(); }
-  if (e.key === "l" || e.key === "L") setLive(true);
-});
-
-// ----------------------------------------------------------------------------
-//  Boot
-// ----------------------------------------------------------------------------
-fit();
-seed(260);
-setLive(true);
-setPlaying(true);
+// boot
+fitSpark();
+for (let i = 0; i < COLS; i++) tick();
+syncLegend();
 requestAnimationFrame(loop);
 </script>
 </body>
