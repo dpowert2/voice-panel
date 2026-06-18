@@ -1330,6 +1330,14 @@ async def handle_index(request: web.Request) -> web.FileResponse:
     )
 
 
+# Standalone demo: real-time agent research graph (synthetic "Quantum" feed).
+async def handle_research_graph(request: web.Request) -> web.FileResponse:
+    return web.FileResponse(
+        os.path.join(os.path.dirname(__file__), "research-graph.html"),
+        headers={"Cache-Control": "no-cache, no-store"},
+    )
+
+
 # Streams a turn's audio with chunked transfer-encoding. Browsers play it
 # back progressively via a standard <audio src="/turn-audio/<id>"> element
 # — first sound hits the user's ears as soon as the first chunk arrives.
@@ -1702,6 +1710,7 @@ async def on_cleanup(app: web.Application) -> None:
 def make_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", handle_index)
+    app.router.add_get("/research-graph", handle_research_graph)
     app.router.add_get("/personas", handle_personas)
     app.router.add_post("/turn", handle_turn)
     app.router.add_post("/reset", handle_reset)
