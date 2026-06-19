@@ -103,7 +103,7 @@
   #price.up { color:#46b888; } #price.down { color:#e5614b; }
   :root[data-theme="light"] #price.up { color:#138a5e; }
   :root[data-theme="light"] #price.down { color:#cc4733; }
-  #timeline { display:block; width:100%; height:clamp(110px,17vh,170px); cursor:pointer; touch-action:none; }
+  #timeline { display:block; width:100%; height:clamp(170px,30vh,260px); cursor:pointer; touch-action:none; }
   #toast { position:absolute; top:6px; left:50%; transform:translateX(-50%) translateY(-6px);
     font-family:var(--mono); font-size:11px; letter-spacing:.02em; color:#1a1407; background:var(--flag);
     border-radius:999px; padding:6px 14px; font-weight:700; white-space:nowrap; opacity:0;
@@ -267,8 +267,8 @@ const KEYS = ["research","news","internal"];
 
 // theme-dependent canvas colors (kept in sync with CSS by applyTheme)
 const THEME_CANVAS = {
-  dark:  { grid:"rgba(120,140,170,0.05)", axis:"rgba(120,135,160,0.5)",  scan:[158,204,255] },
-  light: { grid:"rgba(40,70,130,0.09)",   axis:"rgba(70,90,120,0.6)",    scan:[53,103,214] },
+  dark:  { grid:"rgba(120,140,170,0.05)", axis:"rgba(120,135,160,0.5)",  scan:[158,204,255], candleUp:"#2ebd9b", candleDn:"#ef5350" },
+  light: { grid:"rgba(40,70,130,0.09)",   axis:"rgba(70,90,120,0.6)",    scan:[53,103,214], candleUp:"#179e7e", candleDn:"#e5484d" },
 };
 let tc = Object.assign({ nodeFill:"#14181d" }, THEME_CANVAS.dark);
 let priceColor = "#b79cff";
@@ -358,11 +358,25 @@ for (let i=0;i<SAMPLES;i++){
   }
   data.push(r);
 }
-// "Quantum basket" price index — smooth-ish random walk with an upward drift
-const price=[]; let _p=100;
-for (let i=0;i<SAMPLES;i++){ _p *= (1 + 0.0006 + (rnd(i,21.7)-0.5)*0.012); price.push(_p); }
-const PMIN=Math.min(...price), PMAX=Math.max(...price);
-const priceY = i => 0.06 + 0.86*((price[i]-PMIN)/((PMAX-PMIN)||1));   // normalized for plotting
+// "Quantum basket" hourly OHLC candles — random walk with an upward drift
+const candle=[], price=[]; let _o=100;
+for (let i=0;i<SAMPLES;i++){
+  const c=_o*(1 + 0.0006 + (rnd(i,21.7)-0.5)*0.013);
+  const hi=Math.max(_o,c)*(1 + rnd(i,7.3)*0.004);
+  const lo=Math.min(_o,c)*(1 - rnd(i,3.9)*0.004);
+  candle.push({o:_o,h:hi,l:lo,c}); price.push(c); _o=c;
+}
+const PMIN=Math.min(...candle.map(k=>k.l)), PMAX=Math.max(...candle.map(k=>k.h));
+const nrm = v => 0.06 + 0.86*((v-PMIN)/((PMAX-PMIN)||1));   // value -> 0..1
+const priceY = i => nrm(price[i]);
+// peak volume per hour (sum of the three streams) for bar scaling
+let maxTotal=0; for(const r of data){ const tt=r.research+r.news+r.internal; if(tt>maxTotal) maxTotal=tt; } maxTotal*=1.06;
+// rolling price channel (normalized hi/lo envelope)
+const PWIN=8, pHiN=[], pLoN=[];
+for(let i=0;i<SAMPLES;i++){ let lo=Infinity,hi=-Infinity;
+  for(let j=i-PWIN;j<=i+PWIN;j++){ const idx=Math.max(0,Math.min(SAMPLES-1,j)); if(price[idx]<lo)lo=price[idx]; if(price[idx]>hi)hi=price[idx]; }
+  const nrm=v=>0.06+0.86*((v-PMIN)/((PMAX-PMIN)||1)); pLoN[i]=nrm(lo); pHiN[i]=nrm(hi); }
+const hexRGB = h=>{ h=h.replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join(''); const n=parseInt(h,16); return ((n>>16)&255)+","+((n>>8)&255)+","+(n&255); };
 
 const mark = s => s.replace(/\*\*(.+?)\*\*/g,"<mark>$1</mark>");
 const fmtDate = at => new Date(START+at*MS_PER).toLocaleDateString("en-US",{month:"short",day:"numeric"});
@@ -433,73 +447,90 @@ function drawTimeline(now){
   ctx.clearRect(0,0,W,H);
   const inv = mode==="investigate";
   const activeKeys = inv ? new Set(INSIGHTS[selected].sources.map(s=>s.key)) : null;
+  const base = Math.floor(viewLeft);
 
-  // grid
+  // two panes: candles (top) over research/media volume (bottom), shared time axis
+  const plotH=H-PAD.t-PAD.b, priceBot=PAD.t+plotH*0.60, volBase=H-PAD.b, volTop=priceBot+13, barMaxH=volBase-volTop;
+  const yP = n => priceBot - n*(priceBot-PAD.t);
+  const prgb = hexRGB(priceColor);
+  const CUP = tc.candleUp, CDN = tc.candleDn;
+
+  // price-pane grid
   ctx.strokeStyle=tc.grid; ctx.lineWidth=1;
-  for(let i=0;i<=3;i++){ const y=PAD.t+(i/3)*(H-PAD.t-PAD.b); ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke(); }
-  // date axis sampled across the visible window
-  ctx.fillStyle=tc.axis; ctx.textAlign="center"; ctx.font=monoFont(10);
-  for(let g=0; g<=4; g++){ const c=Math.round(g*(WINDOW-1)/4); const idx=wrap(Math.floor(viewLeft)+c);
-    ctx.fillText(fmtDate(idx), colX(c), H-6); }
+  for(let i=0;i<=3;i++){ const y=PAD.t+(i/3)*(priceBot-PAD.t); ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke(); }
 
-  // "Quantum basket" price line (drawn behind the activity peaks)
-  { const base=Math.floor(viewLeft);
-    ctx.save(); ctx.globalAlpha=inv?0.4:0.85; ctx.strokeStyle=priceColor; ctx.lineWidth=2;
-    ctx.lineJoin="round"; ctx.lineCap="round"; ctx.shadowColor=priceColor; ctx.shadowBlur=6;
-    ctx.beginPath(); let prev=-1;
-    for(let col=0; col<=WINDOW; col++){ const idx=wrap(base+col), x=colX(col), y=yAt(priceY(idx));
-      if(col===0 || (prev>=0 && idx!==(prev+1)%SAMPLES)) ctx.moveTo(x,y); else ctx.lineTo(x,y); prev=idx; }
-    ctx.stroke(); ctx.restore();
-    // live readout: cumulative move of the basket up to the right edge of the window
-    const ri=wrap(base+WINDOW-1), chg=(price[ri]/price[0]-1)*100;
-    const pe=document.getElementById("price");
-    if(pe){ pe.className="price "+(chg>=0?"up":"down");
-      pe.innerHTML=`<i></i>Quantum basket ${chg>=0?"▲":"▼"} ${chg>=0?"+":""}${chg.toFixed(1)}% · ${price[ri].toFixed(1)}`; }
+  // ---- price channel band (rolling hi/lo envelope) ----
+  ctx.save(); ctx.globalAlpha=inv?0.5:1;
+  ctx.beginPath();
+  for(let col=0; col<=WINDOW; col++){ const idx=wrap(base+col); const x=colX(col), y=yP(pHiN[idx]); col?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+  for(let col=WINDOW; col>=0; col--){ const idx=wrap(base+col); const x=colX(col), y=yP(pLoN[idx]); ctx.lineTo(x,y); }
+  ctx.closePath(); ctx.fillStyle=`rgba(${prgb},0.09)`; ctx.fill();
+  ctx.strokeStyle=`rgba(${prgb},0.4)`; ctx.lineWidth=1; ctx.setLineDash([4,3]);
+  for(const arr of [pHiN,pLoN]){ ctx.beginPath(); let pv=-1;
+    for(let col=0; col<=WINDOW; col++){ const idx=wrap(base+col), x=colX(col), y=yP(arr[idx]);
+      if(col===0||(pv>=0&&idx!==(pv+1)%SAMPLES))ctx.moveTo(x,y);else ctx.lineTo(x,y); pv=idx; } ctx.stroke(); }
+  ctx.setLineDash([]); ctx.restore();
+
+  // ---- candlesticks (top pane) ----
+  const colW=usableX()/(WINDOW-1), bw=Math.max(1.8, colW*0.62);
+  for(let col=0; col<WINDOW; col++){
+    const idx=wrap(base+col), k=candle[idx], x=colX(col), up=k.c>=k.o, cc=up?CUP:CDN;
+    ctx.globalAlpha=inv?0.5:1; ctx.strokeStyle=cc; ctx.fillStyle=cc; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x, yP(nrm(k.h))); ctx.lineTo(x, yP(nrm(k.l))); ctx.stroke();   // wick
+    const yo=yP(nrm(k.o)), ycl=yP(nrm(k.c)), top=Math.min(yo,ycl), hgt=Math.max(1.2,Math.abs(yo-ycl));
+    ctx.fillRect(x-bw/2, top, bw, hgt);                                                          // body
   }
+  ctx.globalAlpha=1;
 
-  // stream lines across the window (lift the pen at the wrap seam)
-  for(const k of KEYS){
-    const on = inv ? activeKeys.has(k) : true; const c=STREAM[k].c;
-    ctx.save(); ctx.globalAlpha=on?1:0.16; ctx.strokeStyle=c; ctx.lineWidth=1.6;
-    ctx.lineJoin="round"; ctx.lineCap="round"; if(on){ctx.shadowColor=c; ctx.shadowBlur=4;}
-    ctx.beginPath(); let prev=-1;
-    for(let col=0; col<=WINDOW; col++){
-      const idx=wrap(Math.floor(viewLeft)+col), x=colX(col), y=yAt(data[idx][k]);
-      if(col===0 || (prev>=0 && idx!==(prev+1)%SAMPLES)) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-      prev=idx;
-    }
-    ctx.stroke(); ctx.restore();
+  // ---- research / media volume bars (bottom pane), stacked by source ----
+  for(let col=0; col<WINDOW; col++){
+    const idx=wrap(base+col), x=colX(col); let yc=volBase;
+    for(const key of KEYS){ const on=inv?activeKeys.has(key):true, segH=(data[idx][key]/maxTotal)*barMaxH;
+      ctx.globalAlpha=on?0.9:0.16; ctx.fillStyle=STREAM[key].c; ctx.fillRect(x-bw/2, yc-segH, bw, segH); yc-=segH; }
   }
+  ctx.globalAlpha=1;
+  ctx.strokeStyle=tc.grid; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(PAD.l,volBase); ctx.lineTo(W-PAD.r,volBase); ctx.stroke();
 
-  // scan reticle at the live front (right edge) while scanning forward
+  // ---- scan reticle across both panes ----
   if(!inv && live && scanning){
     const sx=colX(WINDOW-1), sc=tc.scan.join(",");
-    const g=ctx.createLinearGradient(sx-46,0,sx,0);
-    g.addColorStop(0,`rgba(${sc},0)`); g.addColorStop(1,`rgba(${sc},0.16)`);
-    ctx.fillStyle=g; ctx.fillRect(sx-46,PAD.t,46,H-PAD.t-PAD.b);
+    const g=ctx.createLinearGradient(sx-42,0,sx,0); g.addColorStop(0,`rgba(${sc},0)`); g.addColorStop(1,`rgba(${sc},0.16)`);
+    ctx.fillStyle=g; ctx.fillRect(sx-42,PAD.t,42,H-PAD.t-PAD.b);
     ctx.strokeStyle=`rgba(${sc},0.75)`; ctx.lineWidth=1; ctx.setLineDash([3,3]);
-    ctx.beginPath(); ctx.moveTo(sx,PAD.t); ctx.lineTo(sx,H-PAD.b); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(sx,PAD.t); ctx.lineTo(sx,volBase); ctx.stroke(); ctx.setLineDash([]);
   }
 
-  // nodes (only those currently within the window)
+  // ---- insight annotations: vertical guide + circled marker on the candle ----
   const t=now/1000;
   INSIGHTS.forEach((ins,i)=>{
     if(!(inv ? true : detected.has(i))) return;
     const x=xForIdx(ins.at); if(x===null) return;
-    const y=yAt(data[ins.at][ins.key]), c=STREAM[ins.key].c;
+    const py=yP(priceY(ins.at)), c=STREAM[ins.key].c, crgb=hexRGB(c);
     const emph = inv ? (i===selected) : !visited.has(i);
-    if(emph){ const p=0.5+0.5*Math.sin(t*2.6);
-      ctx.strokeStyle=c; ctx.globalAlpha=0.35+0.35*p; ctx.lineWidth=1.4;
-      ctx.beginPath(); ctx.arc(x,y,9+p*5,0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1; }
     const big = inv && i===selected;
-    ctx.shadowColor=c; ctx.shadowBlur=(emph||big)?12:0;
-    ctx.fillStyle=(big||(!inv&&emph))?c:tc.nodeFill;
-    ctx.beginPath(); ctx.arc(x,y,big?6:4.6,0,Math.PI*2); ctx.fill();
-    ctx.shadowBlur=0; ctx.lineWidth=1.6; ctx.strokeStyle=c; ctx.stroke();
+    const pulse = 0.5+0.5*Math.sin(t*2.6);
+    // guide line through both panes
+    ctx.strokeStyle=c; ctx.globalAlpha=big?0.5:0.22; ctx.lineWidth=1; ctx.setLineDash([2,3]);
+    ctx.beginPath(); ctx.moveTo(x,PAD.t); ctx.lineTo(x,volBase); ctx.stroke(); ctx.setLineDash([]);
+    // circled annotation on the candle
+    ctx.globalAlpha=1; ctx.fillStyle=`rgba(${crgb},${big?0.30:0.16})`;
+    ctx.beginPath(); ctx.arc(x,py, big?13:10, 0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle=c; ctx.lineWidth=1.4; ctx.globalAlpha=emph?(0.55+0.4*pulse):0.85;
+    ctx.beginPath(); ctx.arc(x,py, big?13:10, 0,Math.PI*2); ctx.stroke(); ctx.globalAlpha=1;
+    ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x,py, big?3:2.4, 0,Math.PI*2); ctx.fill();
     if(ins.flag){ ctx.fillStyle="#f5d272"; ctx.font=monoFont(9); ctx.textAlign="center";
-      ctx.fillText(ins.flag.kind==="risk"?"⚠":"★", x, y-(big?16:11)); }
-    if(big){ ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(x,y,1.8,0,Math.PI*2); ctx.fill(); }
+      ctx.fillText(ins.flag.kind==="risk"?"⚠":"★", x, py-(big?18:14)); }
   });
+
+  // ---- axes + pane labels + live readout ----
+  ctx.fillStyle=tc.axis; ctx.textAlign="center"; ctx.font=monoFont(10);
+  for(let g=0; g<=4; g++){ const c=Math.round(g*(WINDOW-1)/4); const idx=wrap(base+c); ctx.fillText(fmtStamp(idx).split(",")[0], colX(c), H-5); }
+  ctx.textAlign="left"; ctx.font=monoFont(8.5); ctx.fillStyle=tc.axis;
+  ctx.fillText("QUANTUM BASKET · price + channel", PAD.l+2, PAD.t+9);
+  ctx.fillText("RESEARCH / MEDIA · items per hour", PAD.l+2, volTop+9);
+  { const ri=wrap(base+WINDOW-1), chg=(price[ri]/price[0]-1)*100, pe=document.getElementById("price");
+    if(pe){ pe.className="price "+(chg>=0?"up":"down");
+      pe.innerHTML=`<i></i>Quantum basket ${chg>=0?"▲":"▼"} ${chg>=0?"+":""}${chg.toFixed(1)}% · ${price[ri].toFixed(1)}`; } }
 
   requestAnimationFrame(drawTimeline);
 }
