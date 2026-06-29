@@ -400,18 +400,24 @@ document.getElementById("hero-conf").textContent = Math.round(THESIS.conf*100)+"
 // ----------------------------------------------------------------------------
 const cv = document.getElementById("timeline"), ctx = cv.getContext("2d");
 let W=0,H=0; const PAD={t:14,b:20,l:14,r:14};
+let WINDOW=120;                         // hours visible in the scrolling window
 function fitCanvas(){ const dpr=Math.min(window.devicePixelRatio||1,2); const r=cv.getBoundingClientRect();
-  cv.width=Math.max(1,r.width*dpr); cv.height=Math.max(1,r.height*dpr); ctx.setTransform(dpr,0,0,dpr,0,0); W=r.width; H=r.height; }
+  cv.width=Math.max(1,r.width*dpr); cv.height=Math.max(1,r.height*dpr); ctx.setTransform(dpr,0,0,dpr,0,0); W=r.width; H=r.height;
+  WINDOW = W<520 ? 64 : (W<900 ? 96 : 120); }
 const usableX = () => W-PAD.l-PAD.r;
-const xAt = idx => PAD.l + (idx/(SAMPLES-1))*usableX();   // whole timeline fits the width
+const wrap = n => ((n%SAMPLES)+SAMPLES)%SAMPLES;
+function colX(c){ const frac=viewLeft-Math.floor(viewLeft); return PAD.l + ((c-frac)/(WINDOW-1))*usableX(); }
+function xForIdx(idx){ const col=wrap(idx-Math.floor(viewLeft)); if(col>WINDOW-1) return null;
+  const frac=viewLeft-Math.floor(viewLeft); return PAD.l + ((col-frac)/(WINDOW-1))*usableX(); }
 
 // ----------------------------------------------------------------------------
 //  State
 // ----------------------------------------------------------------------------
 let mode = "scan";          // "scan" | "investigate"
-let scanFront = 0;          // sweep position (0..SAMPLES-1) — reveals data as it advances
-let scanning = true;        // sweep running
-let scanDone = false;       // sweep finished -> settled, nodes clickable
+let viewLeft = 0;           // left edge sample index (float, unbounded; wrapped for display)
+let live = true;            // auto-scroll, following the live edge
+let scanning = true;        // feed running
+let frontAbs = 0;           // monotonic discovered frontier (first-pass detection)
 let detectPause = 0;
 let selected = -1;
 let nodeHit = [];           // current frame's node screen positions for tap hit-testing
@@ -419,51 +425,53 @@ const detected = new Set();
 const visited = new Set();
 
 const monoFont = sz => sz+"px "+getComputedStyle(document.body).getPropertyValue("--mono");
-const SCAN_DUR = 9000;      // ms for the sweep to cross the whole timeline
+const FEED_RATE = 0.02;     // hours per ms (live auto-scroll speed)
 
 function drawTimeline(now){
   const dt = now-(drawTimeline._last||now); drawTimeline._last=now;
 
-  // advance the sweep: reveal data left->right, flag patterns, then settle
-  if (mode==="scan" && scanning && !scanDone && now>detectPause){
-    scanFront = Math.min(SAMPLES-1, scanFront + (SAMPLES/SCAN_DUR)*dt);
-    INSIGHTS.forEach((ins,i)=>{ if(!detected.has(i) && scanFront>=ins.at) detect(i); });
-    if (scanFront>=SAMPLES-1){ scanDone=true; scanning=false;
-      document.getElementById("scan-msg").textContent="Scan complete — "+INSIGHTS.length+" patterns flagged. Tap any circled node to explore.";
-      renderControls();
+  // advance the live feed (continuous) + flag patterns as they enter the window
+  if (mode==="scan" && scanning && live && now>detectPause){
+    viewLeft += FEED_RATE*dt;
+    const f = Math.floor(viewLeft)+WINDOW-1;
+    if (f>frontAbs){ frontAbs=f;
+      INSIGHTS.forEach((ins,i)=>{ if(!detected.has(i) && frontAbs>=ins.at) detect(i); });
+      if (detected.size>=INSIGHTS.length)
+        document.getElementById("scan-msg").textContent="Live — "+INSIGHTS.length+" patterns flagged. Drag to scroll back · tap a circled node.";
     }
   }
 
   ctx.clearRect(0,0,W,H);
   const inv = mode==="investigate";
   const activeKeys = inv ? new Set(INSIGHTS[selected].sources.map(s=>s.key)) : null;
-  const upTo = (mode==="scan" && !scanDone) ? Math.floor(scanFront) : SAMPLES-1;   // reveal frontier
+  const base = Math.floor(viewLeft);
 
   // two panes: candles (top) over research/media volume (bottom), shared time axis
   const plotH=H-PAD.t-PAD.b, priceBot=PAD.t+plotH*0.60, volBase=H-PAD.b, volTop=priceBot+13, barMaxH=volBase-volTop;
   const yP = n => priceBot - n*(priceBot-PAD.t);
   const prgb = hexRGB(priceColor);
   const CUP = tc.candleUp, CDN = tc.candleDn;
-  const colW = usableX()/(SAMPLES-1), bw = Math.max(1.4, colW*0.62);
+  const colW = usableX()/(WINDOW-1), bw = Math.max(1.6, colW*0.6);
 
   // price-pane grid
   ctx.strokeStyle=tc.grid; ctx.lineWidth=1;
   for(let i=0;i<=3;i++){ const y=PAD.t+(i/3)*(priceBot-PAD.t); ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke(); }
 
-  // ---- price channel band (rolling hi/lo envelope), revealed up to the front ----
+  // ---- price channel band (rolling hi/lo envelope) ----
   ctx.save(); ctx.globalAlpha=inv?0.5:1;
   ctx.beginPath();
-  for(let i=0;i<=upTo;i++){ const x=xAt(i), y=yP(pHiN[i]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
-  for(let i=upTo;i>=0;i--){ const x=xAt(i), y=yP(pLoN[i]); ctx.lineTo(x,y); }
+  for(let col=0; col<=WINDOW; col++){ const idx=wrap(base+col), x=colX(col), y=yP(pHiN[idx]); col?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+  for(let col=WINDOW; col>=0; col--){ const idx=wrap(base+col), x=colX(col), y=yP(pLoN[idx]); ctx.lineTo(x,y); }
   ctx.closePath(); ctx.fillStyle=`rgba(${prgb},0.09)`; ctx.fill();
   ctx.strokeStyle=`rgba(${prgb},0.4)`; ctx.lineWidth=1; ctx.setLineDash([4,3]);
-  for(const arr of [pHiN,pLoN]){ ctx.beginPath();
-    for(let i=0;i<=upTo;i++){ const x=xAt(i), y=yP(arr[i]); i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke(); }
+  for(const arr of [pHiN,pLoN]){ ctx.beginPath(); let pv=-1;
+    for(let col=0; col<=WINDOW; col++){ const idx=wrap(base+col), x=colX(col), y=yP(arr[idx]);
+      if(col===0||(pv>=0&&idx!==(pv+1)%SAMPLES))ctx.moveTo(x,y);else ctx.lineTo(x,y); pv=idx; } ctx.stroke(); }
   ctx.setLineDash([]); ctx.restore();
 
   // ---- candlesticks (top pane) ----
-  for(let i=0;i<=upTo;i++){
-    const k=candle[i], x=xAt(i), up=k.c>=k.o, cc=up?CUP:CDN;
+  for(let col=0; col<WINDOW; col++){
+    const idx=wrap(base+col), k=candle[idx], x=colX(col), up=k.c>=k.o, cc=up?CUP:CDN;
     ctx.globalAlpha=inv?0.5:1; ctx.strokeStyle=cc; ctx.fillStyle=cc; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(x, yP(nrm(k.h))); ctx.lineTo(x, yP(nrm(k.l))); ctx.stroke();   // wick
     const yo=yP(nrm(k.o)), ycl=yP(nrm(k.c)), top=Math.min(yo,ycl), hgt=Math.max(1.2,Math.abs(yo-ycl));
@@ -472,17 +480,17 @@ function drawTimeline(now){
   ctx.globalAlpha=1;
 
   // ---- research / media volume bars (bottom pane), stacked by source ----
-  for(let i=0;i<=upTo;i++){
-    const x=xAt(i); let yc=volBase;
-    for(const key of KEYS){ const on=inv?activeKeys.has(key):true, segH=(data[i][key]/maxTotal)*barMaxH;
+  for(let col=0; col<WINDOW; col++){
+    const idx=wrap(base+col), x=colX(col); let yc=volBase;
+    for(const key of KEYS){ const on=inv?activeKeys.has(key):true, segH=(data[idx][key]/maxTotal)*barMaxH;
       ctx.globalAlpha=on?0.9:0.16; ctx.fillStyle=STREAM[key].c; ctx.fillRect(x-bw/2, yc-segH, bw, segH); yc-=segH; }
   }
   ctx.globalAlpha=1;
   ctx.strokeStyle=tc.grid; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(PAD.l,volBase); ctx.lineTo(W-PAD.r,volBase); ctx.stroke();
 
-  // ---- scan reticle at the sweep front ----
-  if(mode==="scan" && !scanDone){
-    const sx=xAt(scanFront), sc=tc.scan.join(",");
+  // ---- scan reticle at the live edge (right) ----
+  if(!inv && live && scanning){
+    const sx=colX(WINDOW-1), sc=tc.scan.join(",");
     const g=ctx.createLinearGradient(sx-42,0,sx,0); g.addColorStop(0,`rgba(${sc},0)`); g.addColorStop(1,`rgba(${sc},0.16)`);
     ctx.fillStyle=g; ctx.fillRect(sx-42,PAD.t,42,H-PAD.t-PAD.b);
     ctx.strokeStyle=`rgba(${sc},0.8)`; ctx.lineWidth=1; ctx.setLineDash([3,3]);
@@ -493,7 +501,8 @@ function drawTimeline(now){
   const t=now/1000; nodeHit=[];
   INSIGHTS.forEach((ins,i)=>{
     if(!(inv ? true : detected.has(i))) return;
-    const x=xAt(ins.at), py=yP(priceY(ins.at)), c=STREAM[ins.key].c, crgb=hexRGB(c);
+    const x=xForIdx(ins.at); if(x===null) return;
+    const py=yP(priceY(ins.at)), c=STREAM[ins.key].c, crgb=hexRGB(c);
     const emph = inv ? (i===selected) : !visited.has(i);
     const big = inv && i===selected;
     const pulse = 0.5+0.5*Math.sin(t*2.6);
@@ -511,24 +520,33 @@ function drawTimeline(now){
 
   // ---- axes + pane labels + live readout ----
   ctx.fillStyle=tc.axis; ctx.textAlign="center"; ctx.font=monoFont(10);
-  for(let g=0; g<=4; g++){ const idx=Math.round(g*(SAMPLES-1)/4); ctx.fillText(fmtStamp(idx).split(",")[0], xAt(idx), H-5); }
+  for(let g=0; g<=4; g++){ const c=Math.round(g*(WINDOW-1)/4); const idx=wrap(base+c); ctx.fillText(fmtStamp(idx).split(",")[0], colX(c), H-5); }
   ctx.textAlign="left"; ctx.font=monoFont(8.5); ctx.fillStyle=tc.axis;
   ctx.fillText("QUANTUM BASKET · price + channel", PAD.l+2, PAD.t+9);
   ctx.fillText("RESEARCH / MEDIA · items per hour", PAD.l+2, volTop+9);
-  { const chg=(price[upTo]/price[0]-1)*100, pe=document.getElementById("price");
+  { const ri=wrap(base+WINDOW-1), chg=(price[ri]/price[0]-1)*100, pe=document.getElementById("price");
     if(pe){ pe.className="price "+(chg>=0?"up":"down");
-      pe.innerHTML=`<i></i>Quantum basket ${chg>=0?"▲":"▼"} ${chg>=0?"+":""}${chg.toFixed(1)}% · ${price[upTo].toFixed(1)}`; } }
+      pe.innerHTML=`<i></i>Quantum basket ${chg>=0?"▲":"▼"} ${chg>=0?"+":""}${chg.toFixed(1)}% · ${price[ri].toFixed(1)}`; } }
 
   requestAnimationFrame(drawTimeline);
 }
 
-// ---- tap a circled node to open its insight ----
-cv.addEventListener("click",(e)=>{
+// ---- drag to scroll back through time · tap a circled node to open it ----
+let tlDrag=false, tlSX=0, tlV0=0, tlMoved=false, tlPid=0;
+cv.addEventListener("pointerdown",(e)=>{ tlDrag=true; tlMoved=false; tlSX=e.clientX; tlV0=viewLeft; tlPid=e.pointerId; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener("pointermove",(e)=>{ if(!tlDrag) return;
+  const dx=e.clientX-tlSX; if(Math.abs(dx)>4){ tlMoved=true; if(mode==="scan" && live) setLive(false); }
+  viewLeft = tlV0 - dx*((WINDOW-1)/usableX()); });
+cv.addEventListener("pointerup",(e)=>{ tlDrag=false; try{cv.releasePointerCapture(tlPid);}catch(_){}
+  if(tlMoved) return;
   const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
   let best=-1,bd=26*26;
   for(const n of nodeHit){ const d=(n.x-mx)**2+(n.y-my)**2; if(d<bd){bd=d;best=n.i;} }
   if(best>=0) investigate(best);
 });
+cv.addEventListener("wheel",(e)=>{ if(mode!=="scan") return; e.preventDefault();
+  if(live) setLive(false); viewLeft += Math.sign(e.deltaY)*(e.shiftKey?12:5); }, {passive:false});
+function setLive(on){ live=on; if(on) scanning=true; renderControls(); }
 
 // ----------------------------------------------------------------------------
 //  Detection
@@ -558,6 +576,9 @@ function investigate(i){
   selected=i; visited.add(i); mode="investigate";
   const ins=INSIGHTS[i], accent=STREAM[ins.key].c;
   focus.style.setProperty("--accent",accent); focus.classList.add("investigate","lit");
+
+  // pause the feed and centre the window on this insight
+  live=false; scanning=false; viewLeft = ins.at-(WINDOW-1)/2;
 
   // focus header
   const flagBadge = ins.flag ? `<span class="badge ${ins.flag.kind==="risk"?"risk":"flag"}">${ins.flag.kind==="risk"?"⚠":"★"} ${ins.flag.label}</span>` : "";
@@ -610,10 +631,8 @@ function backToScan(){
   stopWalk(); mode="scan"; selected=-1;
   focus.classList.remove("investigate","lit"); focus.style.removeProperty("--accent");
   track.classList.remove("on"); track.innerHTML=""; hint.style.display="";
-  hint.innerHTML = scanDone
-    ? "Scan complete — tap any circled node to revisit how I built it."
-    : "The agent is scanning the timeline.<br>When it flags a pattern, tap the circled node to see how it got there.";
-  renderControls();
+  hint.innerHTML="The agent is scanning a live feed.<br>Drag to scroll back through time · tap a circled node to see how it got there.";
+  setLive(true);   // resume the live feed (also re-renders controls)
 }
 document.getElementById("ins-back").onclick = backToScan;
 
@@ -669,12 +688,11 @@ function renderControls(){
   controls.innerHTML="";
   if(mode==="scan"){
     const b=document.createElement("button"); b.className="btn";
-    if(scanDone){ b.innerHTML="↻ Re-scan"; b.onclick=()=>{ detected.clear(); visited.clear(); scanFront=0; scanDone=false; scanning=true;
-        document.getElementById("scan-msg").textContent="Scanning the data for patterns…"; renderControls(); }; }
-    else { b.innerHTML = scanning?"⏸ Pause scan":"▶ Resume scan"; b.onclick=()=>{ scanning=!scanning; renderControls(); }; }
+    if(!live){ b.innerHTML="● Go live"; b.onclick=()=>setLive(true); }
+    else { b.innerHTML = scanning?"⏸ Pause":"▶ Play"; b.onclick=()=>{ scanning=!scanning; renderControls(); }; }
     const sk=document.createElement("button"); sk.className="btn"; sk.textContent="Reveal all ⤙";
-    sk.onclick=()=>{ INSIGHTS.forEach((_,i)=>detected.add(i)); scanFront=SAMPLES-1; scanDone=true; scanning=false;
-      document.getElementById("scan-msg").textContent="Scan complete — "+INSIGHTS.length+" patterns flagged. Tap any circled node to explore."; renderControls(); };
+    sk.onclick=()=>{ INSIGHTS.forEach((_,i)=>detected.add(i)); frontAbs=SAMPLES;
+      document.getElementById("scan-msg").textContent="Live — "+INSIGHTS.length+" patterns flagged. Drag to scroll back · tap a circled node."; renderControls(); };
     controls.append(b); const sp=document.createElement("div"); sp.className="spacer"; controls.append(sp,sk);
   } else {
     const back=document.createElement("button"); back.className="btn nav"; back.textContent="‹";
