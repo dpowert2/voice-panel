@@ -67,7 +67,7 @@ CARTESIA_API_KEY = os.environ.get("CARTESIA_API_KEY", "sk_car_uAPGrHGAx7CbGAKEmB
 # Cartesia above). Rotate post-demo.
 ANAM_API_KEY = os.environ.get(
     "ANAM_API_KEY",
-    "Mzc3MmRkNzAtM2ViNi00NWRhLWE1MTMtZGEwNDYzMDdkMjI1OlQrR3Z3dDhaczk2a3Y0Y3pIU1dVemlQTGo2SVZGUHRYYitTRnNqMmRUY0U9",
+    "NmU4YjA2Y2EtZmQ0My00ZmQ4LTk5YzctNjQ5MGYzNzQzNTFhOmIySVlpQkJhdmU5a0RwdkYxYXJPTjJvUWYvZEYyY1ZFOFNEL05FRk85dlE9",
 )
 # Per-persona avatar/voice picks from the account's stock gallery (verified
 # via GET /v1/avatars + /v1/voices on 2026-06-05). Override via env vars.
@@ -80,9 +80,16 @@ ANAM_PERSONA_CONFIG = {
         "avatar_id": os.environ.get("ANAM_AVATAR_HOLISTIC", "071b0286-4cce-4808-bee2-e642f1062de3"),  # Liv, home
         "voice_id":  os.environ.get("ANAM_VOICE_HOLISTIC",  "90313ddc-4fc0-11f1-84b0-52bacf74fa75"),  # Amanda — Warm Guide
     },
-    "lawyer": {  # Counsel Reed — suited/formal
-        "avatar_id": os.environ.get("ANAM_AVATAR_LAWYER", "6cc28442-cccd-42a8-b6e4-24b7210a09c5"),  # Gabriel, table
-        "voice_id":  os.environ.get("ANAM_VOICE_LAWYER",  "91b4ce0f-4fc0-11f1-84b0-52bacf74fa75"),  # Archie — GB male
+    "lawyer": {  # Counsel Reed — rendered with Dave's own digital twin
+        # Dave built a custom Anam persona of himself ("Dave's digital twin",
+        # personaId 57f39edf-6ec6-49a5-8fc8-4f85fbf1e468) and asked for it in
+        # the panel. We take ONLY its avatar + voice: Reed's system_prompt in
+        # personas.py still drives every word, so the twin looks and sounds
+        # like Dave but argues like the lawyer. Swap back to the stock Gabriel
+        # avatar (6cc28442-cccd-42a8-b6e4-24b7210a09c5) + Archie voice
+        # (91b4ce0f-4fc0-11f1-84b0-52bacf74fa75) via env vars if needed.
+        "avatar_id": os.environ.get("ANAM_AVATAR_LAWYER", "43057fbc-dde9-4c6b-8e3c-1033d4f71333"),  # Dave's digital twin
+        "voice_id":  os.environ.get("ANAM_VOICE_LAWYER",  "63ccc114-2821-4e48-92ad-c00391bd8e8f"),  # Dave's digital twin voice
     },
 }
 
